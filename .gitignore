@@ -1,0 +1,14 @@
+data/
+**/data/
+LOGIBOX PDF/
+**/LOGIBOX PDF/
+__pycache__/
+*.db
+*.db-*
+*.sqlite*
+*.log
+.env
+.env.*
+bundled_company_seal.png
+*.zip
+!LOGIBOX_latest_no_data.zip
