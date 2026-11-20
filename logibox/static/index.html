@@ -1,0 +1,1292 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LOGIBOX</title>
+<style>
+:root{--bg:#f4f6f9;--card:#fff;--ink:#1b1f2a;--mut:#566073;--line:#dfe3ea;--acc:#1f3fd1;--navy:#14213d;--warn:#fff3d6;--warnt:#7a4b00;--ok:#e3f4e8;--okt:#17602e;--bad:#b42318}
+*{box-sizing:border-box}body{margin:0;font-family:"Noto Sans JP","Yu Gothic UI",sans-serif;background:var(--bg);color:var(--ink);font-size:15px}
+nav{background:var(--navy);display:flex;gap:4px;padding:8px 10px;flex-wrap:wrap;position:sticky;top:0;z-index:5}
+nav a{color:#cfd6e6;text-decoration:none;padding:9px 14px;border-radius:8px;font-size:14px}nav a.on{background:#2b3f73;color:#fff}nav .sp{flex:1}
+main{max-width:1000px;margin:0 auto;padding:14px}
+h1{font-size:20px;margin:6px 0 12px}h2{font-size:16px;margin:0 0 10px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:12px}
+.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px}
+.f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--mut)}
+input,select,textarea{font:inherit;padding:10px;border:1px solid #c5ccd8;border-radius:8px;background:#fff;color:var(--ink);min-height:42px;width:100%}
+button{font:inherit;padding:10px 16px;border-radius:8px;border:1px solid var(--acc);background:var(--acc);color:#fff;cursor:pointer;min-height:42px}
+button.s{background:#fff;color:var(--acc)}button.d{background:#fff;color:var(--bad);border-color:var(--bad)}
+.row{display:flex;justify-content:space-between;gap:10px;padding:8px 0;border-bottom:1px solid #eef0f4;font-size:14px;align-items:center}
+.row:last-child{border:0}.m{color:var(--mut);font-size:12px}.n{font-size:22px;font-weight:700}
+.t{font-size:11px;padding:2px 8px;border-radius:99px;background:#e8edff;color:var(--acc);white-space:nowrap}.t.w{background:var(--warn);color:var(--warnt)}.t.g{background:var(--ok);color:var(--okt)}
+#nf fieldset{padding:0;border:0;margin:0;min-width:0}
+#nf .case-warning{color:var(--bad)}#nf button:disabled{opacity:.55;cursor:default}
+#nf p:empty{display:none}
+.case-maker{grid-column:1 / -1;min-width:0}
+#n_maker,#c_maker{field-sizing:content;min-height:72px;resize:vertical}
+.acts{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}.big{font-weight:700}
+#toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:#1b1f2a;color:#fff;padding:10px 16px;border-radius:8px;display:none;z-index:9;max-width:90%}
+#toast.bad{background:var(--bad)}a.case{color:inherit;text-decoration:none}
+.login{max-width:360px;margin:60px auto}.pad{overflow-x:auto}
+.purchase-entry{padding:4px 0 10px;border-bottom:1px solid var(--line);margin-bottom:12px;min-width:0}
+.purchase-entry h3,.invoice-detail h3{font-size:14px;margin:12px 0 6px}
+.purchase-doc{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;padding:5px 0;font-size:13px}
+.purchase-doc .doc-name{overflow-wrap:anywhere;min-width:0;max-width:100%}
+.purchase-doc button,.purchase-doc a,.doc-tool{font-size:13px;min-height:32px;padding:5px 9px}
+.doc-tool{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:8px;color:var(--acc);text-decoration:none;background:white}
+.purchase-tools,.invoice-detail{background:#f7f9fe}
+.purchase-fields{margin-top:8px}
+.invoice-detail{margin-top:12px}
+.invoice-items{border-collapse:collapse;width:100%;min-width:720px;text-align:left}
+.invoice-items th,.invoice-items td{padding:4px;font-size:13px}
+.invoice-items input{min-width:72px}.invoice-items td:first-child input{min-width:165px}
+#purchase_read_result p{margin:8px 0}
+.purchase-warning{color:var(--bad)}
+#purchase_section button:disabled,.doc-dialog button:disabled{opacity:.55;cursor:default}
+.doc-dialog{border:1px solid var(--line);border-radius:12px;padding:14px;color:var(--ink);max-width:calc(100% - 20px);width:520px}
+.doc-dialog::backdrop{background:#14213d9e}
+.doc-dialog h2{overflow-wrap:anywhere}
+.doc-preview{width:min(1080px,calc(100% - 20px));height:min(880px,calc(100% - 20px));overflow:hidden}
+.doc-preview[open]{display:flex;flex-direction:column;gap:8px}
+.doc-preview .acts{margin:0;align-items:center}
+.preview-controls{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.preview-status:empty{display:none}
+.preview-scroll{overflow:auto;background:#e8edf6;border:1px solid var(--line);border-radius:8px;flex:1;min-height:0}
+.preview-image{display:block;width:100%;margin:0 auto}
+.preview-image:not([src]){display:none}
+#document_form button:disabled{opacity:.55;cursor:default}
+#document_item_names{field-sizing:content;min-height:100px;resize:vertical}
+@media(max-width:600px){main{padding:10px}.row{flex-wrap:wrap}}
+/* TOMOS-style navigation and case editor */
+#app.workspace{display:grid;grid-template-columns:232px minmax(0,1fr);min-height:100vh}
+.workspace aside{position:sticky;top:0;align-self:start;height:100dvh;overflow:auto;background:var(--navy);padding:20px 14px;color:white}
+.brand{font-weight:700;font-size:17px;padding:8px 10px 16px}
+.version{display:block;color:#c4cfdf;font-size:12px;margin-top:8px}
+.workspace article a{color:#253858;text-decoration:none;font-weight:600}
+.workspace article a:hover{text-decoration:underline}
+.workspace nav{position:static;display:grid;padding:0;gap:3px;background:transparent}
+.workspace nav a{display:flex;align-items:center;gap:10px;min-height:43px}
+.workspace nav a:hover{background:#26395f}
+.workspace nav a.on{background:#314d84;box-shadow:inset 3px 0 #8bafff}
+.workspace nav svg{width:20px;height:20px;flex:none}
+.workspace main{width:100%;max-width:1440px}
+.logout{margin:16px 0 0;background:transparent;border-color:#526686}
+.mobile-nav{display:none}
+.table-scroll{overflow:auto}
+.data-table{border-collapse:collapse;width:100%;text-align:left}
+.data-table th,.data-table td{padding:12px 10px;border-bottom:1px solid var(--line)}
+.data-table th{background:#edf1f8;white-space:nowrap}
+.amount{font-variant-numeric:tabular-nums;white-space:nowrap}
+.workspace article .amount{white-space:normal;overflow-wrap:anywhere}
+.filter-bar{display:grid;grid-template-columns:minmax(0,2fr) minmax(120px,1fr);gap:10px;margin-bottom:12px}
+#case-editor{width:min(1100px,96vw);max-width:none;max-height:94dvh;padding:0;border:1px solid var(--line);border-radius:14px;color:var(--ink);background:var(--bg)}
+#case-editor[open]{display:flex;flex-direction:column}
+#case-editor::backdrop{background:#101c38a6}
+dialog .modal-toast{position:sticky;bottom:0;margin:0;padding:10px 16px;background:var(--ok);color:var(--okt);z-index:4}
+dialog .modal-toast.bad{background:#fff0ed;color:var(--bad)}
+.editor-head{background:white;padding:14px 20px;border-bottom:1px solid var(--line)}
+.editor-title{display:flex;justify-content:space-between;align-items:start;gap:12px}
+.editor-tabs{display:flex;flex-wrap:wrap;gap:6px}
+.editor-tabs button{background:white;color:var(--acc);border-color:var(--line)}
+.editor-tabs [aria-selected=true]{background:#e3eafd;border-color:#aebee4;color:#163b98}
+.editor-body{overflow:auto;padding:16px 20px}
+.editor-body [hidden]{display:none}
+.editor-panel{min-width:0}
+.editor-body .card{min-width:0}
+.settlement-dialog{width:min(920px,96vw);max-height:94dvh;padding:0;background:var(--bg)}
+.settlement-dialog[open]{display:flex;flex-direction:column}
+@media(max-width:720px){
+ #app.workspace{display:block}.workspace aside{height:auto;z-index:5;padding:8px 12px}
+ .mobile-nav{display:inline-block;background:transparent;border-color:#526686}.brand{display:inline-block;padding:8px 10px}
+ .workspace aside:not(.expanded) nav,.workspace aside:not(.expanded) .logout{display:none}
+ .workspace nav{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .editor-head,.editor-body{padding:10px}
+ .editor-tabs button{padding:6px 9px;min-height:38px}
+ .data-table td,.data-table th{padding:8px}.filter-bar{grid-template-columns:1fr}
+}
+.settings-tabs{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:12px;border-bottom:1px solid var(--line);padding-bottom:8px}
+.settings-tabs button{background:transparent;color:var(--mut);border-color:transparent}
+.settings-tabs button[aria-selected=true]{background:#e3eafd;color:#183e91;border-color:#bccce9;font-weight:700}
+/* Typography and spacing inherited from TOMOS ver.2.48.8. */
+:root{--bg:#f3f5f9;--ink:#1b2a41;--mut:#566176;--line:#dde3ec;--acc:#1d4ed8;--navy:#16233a}
+body{font-family:'Yu Gothic UI',Meiryo,sans-serif;font-size:15px;line-height:1.55}
+button,input,select,textarea{font:inherit}
+button{font-weight:600;min-height:46px;padding:12px 20px;border-radius:9px}
+button.s{border-color:var(--line)}
+input,select,textarea{font-size:15px;padding:12px 14px;background:#fbfcfe;border-color:var(--line)}
+input:focus,select:focus,textarea:focus{outline:2px solid #a7c5ff;outline-offset:1px}
+.workspace h1{font-size:20px;line-height:1.4;margin:0 0 12px}
+h2{font-size:17px;line-height:1.4}
+h3{font-size:17px}
+.f{font-size:14px;font-weight:600;color:var(--mut)}
+.f input,.f textarea,.f select{font-weight:400}
+.m{font-size:13px}
+.row{font-size:15px;padding:10px 0}
+.t{font-size:13px;border-radius:5px;padding:4px 9px}
+.n{font-size:24px;font-weight:650;font-variant-numeric:tabular-nums}
+.workspace nav a{font-size:16px;font-weight:600;color:#a9b8d0;padding:10px 12px;min-height:46px}
+.workspace nav a.on{background:#2a3b5a;color:white}
+.brand{display:block;font-size:19px;letter-spacing:1px;padding-bottom:24px}
+.workspace main{padding:clamp(14px,2.5vh,26px) clamp(14px,2.1vw,32px)}
+.card{padding:24px;border-radius:13px;margin-bottom:20px}
+.g{gap:18px}
+.data-table th{font-size:14px;background:#f1f6f8;color:var(--mut)}
+.data-table td{font-size:15px;padding:12px 10px}
+@media(max-width:720px){
+ .workspace h1{font-size:18px}
+ .brand{display:inline-block;padding:8px 10px;font-size:17px}
+ .card{padding:16px}
+ .workspace nav a{font-size:14px}.row{flex-wrap:wrap}
+}
+
+/* LOGIBOX navigation */
+.workspace aside{background:linear-gradient(165deg,#061d38 0%,#092747 55%,#071c34 100%);padding:clamp(14px,3vh,26px) 16px;box-shadow:4px 0 24px #071c3410}
+.workspace .brand{display:flex;flex-direction:column;align-items:center;gap:8px;padding:4px 0 22px;color:#fff;text-decoration:none;line-height:1.2}
+.brand img{width:68px;height:74px}.brand span{font-size:30px;letter-spacing:3px;font-weight:750}.brand small{font-size:12px;color:#afc4de;letter-spacing:.5px;font-weight:400}
+.workspace nav{gap:8px}.workspace nav a{position:relative;min-height:46px;padding:9px 28px 9px 12px;border:1px solid #244a70;border-radius:11px;background:linear-gradient(110deg,#143b64,#0e3055);color:#e7f1ff;font-size:14px;font-weight:650;box-shadow:0 5px 14px #00102225;transition:background .15s,transform .15s}
+.workspace nav a::after{content:'›';position:absolute;right:12px;font-size:25px;font-weight:400}.workspace nav a.on{background:linear-gradient(110deg,#008aff,#0872ef);border-color:#2298ff;box-shadow:0 6px 18px #0079ff30;color:white}
+.workspace nav a:hover{transform:translateX(2px);filter:brightness(1.12)}.workspace nav a:focus-visible{outline:3px solid #91cfff;outline-offset:3px}
+.workspace .logout{margin-top:12px;min-height:38px;padding:6px 12px;border-color:#375675;color:#c6d9ee;border-radius:9px;background:transparent;font-size:14px}.workspace .version{color:#9eb7d2;padding:4px 5px}
+@media(max-width:720px){.workspace aside{padding:10px 14px}.workspace .brand{display:inline-flex;flex-direction:row;gap:10px;padding:0;margin-right:12px;vertical-align:middle}.brand img{width:28px;height:32px}.brand span{font-size:20px;letter-spacing:2px}.brand small{display:none}.workspace .mobile-nav{float:right;padding:6px 12px;min-height:36px}.workspace nav{clear:both;padding-top:16px}.workspace nav a{min-height:48px}.workspace .logout{margin-top:12px}}
+
+.auth-screen{min-height:100dvh;display:grid;place-items:center;padding:32px 20px;background:linear-gradient(120deg,#17253b,#283955);color:#172b48}
+.auth-card{width:min(100%,470px);max-width:470px;margin:0;padding:50px 46px 54px;border-radius:15px;background:#fbfcfe;box-shadow:0 18px 60px #09162928}
+.auth-brand{font-size:32px;letter-spacing:4px;font-weight:700;margin-bottom:42px;line-height:1.3}.auth-brand span{color:#a9c6ff}
+.auth-card h1{font-size:26px;margin:0 0 14px;font-weight:700}.auth-intro{font-size:14px;color:#526b8c;margin:0 0 28px;line-height:1.8}
+.auth-card .f{font-size:14px;gap:8px}.auth-card input{background:#e9f0fd;min-height:52px;border:1px solid #d8e0ed;border-radius:9px;padding:12px 14px}
+.auth-card button{width:100%;min-height:51px;margin-top:18px;border-radius:9px;background:#2148e0;border-color:#2148e0;font-weight:700}
+.auth-card input:focus-visible,.auth-card button:focus-visible{outline:3px solid #91b7ff;outline-offset:3px}
+@media(max-width:520px){.auth-screen{padding:24px 16px}.auth-card{padding:34px 26px 38px}.auth-brand{font-size:29px;margin-bottom:30px}.auth-card h1{font-size:24px}}
+
+.case-info-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;background:#e4ebfc;border:1px solid #d8e2f6;border-radius:12px;padding:14px 18px;margin:16px 0}
+.case-info-strip span{display:block;color:#65738c;font-size:12px;margin-bottom:6px}.case-info-strip strong{font-size:15px;overflow-wrap:anywhere}
+.sub-tabs{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 18px;padding-bottom:12px;border-bottom:1px solid #d8e2f6}
+.sub-tabs button{background:white;color:#203657;border:1px solid #d8e2f6}.sub-tabs button[aria-selected="true"]{background:#e2eaff;color:#2148d7;border-color:#b7c9f4}
+.sub-slot .sub-input-summary{background:#edf3ff;border:1px solid #d8e4f8;border-radius:12px;padding:18px;margin-bottom:20px}.sub-slot>.row{background:#f2f6ff}
+@media(max-width:720px){.case-info-strip{grid-template-columns:repeat(2,minmax(0,1fr));padding:10px;gap:8px}.case-info-strip strong{font-size:13px}.sub-slot .sub-input-summary{padding:12px}}
+
+.dashboard-view,.exports-page,.settings-page{--panel-gap:12px;--panel-pad:16px;min-width:0}
+.dashboard-view,.dash-top,.dash-middle,.exports-grid{display:grid;gap:var(--panel-gap)}
+.dashboard-view h1{margin:0}
+.dashboard-view .card,.exports-page .card,.settings-page .card{
+ padding:var(--panel-pad);margin:0;min-width:0;border-radius:12px
+}
+.dash-top{grid-template-columns:repeat(4,minmax(0,1fr))}
+.dash-top h2{font-size:14px;margin-bottom:4px}
+.dash-middle{grid-template-columns:minmax(0,3fr) minmax(0,2fr)}
+.dash-money{font-size:24px;font-weight:700;line-height:1.25;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.dash-note,.dashboard-view small{display:block;font-size:12px;color:var(--mut);line-height:1.45}
+.dash-note{margin:5px 0 0}
+.dashboard-view a,.deadline-list a{color:var(--acc);text-decoration:none}
+.dashboard-view a:hover,.deadline-list a:hover{text-decoration:underline}
+.dash-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr));gap:8px}
+.dash-metric{display:grid;align-content:start;gap:3px;padding:8px 12px;border-radius:8px;background:#edf3ff}
+.dash-metric + .dash-metric{background:#f3f6fb}
+.dash-metric span,.dash-metric a,.dash-profit-row span{font-size:13px;color:var(--mut)}
+.dash-metric a{color:var(--acc)}
+.dash-partner-list{margin-top:5px}
+.dash-partner,.dash-profit-row,.dash-task{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,auto);align-items:center;gap:8px 12px;padding:5px 0;border-bottom:1px solid #e5ebf3}
+.dash-partner:last-child,.dash-task:last-child{border-bottom:0}
+.dash-partner>span,.dash-task a{overflow-wrap:anywhere}
+.dash-partner strong,.dash-profit-row strong{text-align:right;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.dash-partner{display:block;padding:12px 0;font-size:15px}
+.dash-partner-name{display:block;font-size:16px;font-weight:700;margin-bottom:8px;overflow-wrap:anywhere}
+.dashboard-view .dash-partner-name small{font-size:14px;font-weight:400;margin-top:3px}
+.dash-partner dl{margin:0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 16px;align-items:baseline}
+.dash-partner dt,.dash-partner dd{margin:0}
+.dash-partner dd{text-align:right;font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+.dash-partner .principal-available{color:#1764bf;font-weight:700}
+.dash-profit-row{padding:6px 0}
+.dash-progress-title{font-size:13px;margin:10px 0 5px;color:var(--mut)}
+.dash-progress{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 12px;margin:0}
+.dash-progress>div{display:flex;justify-content:space-between;gap:4px 8px;flex-wrap:wrap;background:#f3f6fb;padding:4px 8px;border-radius:6px;font-size:13px}
+.dash-progress dd{margin:0;font-weight:700}
+.section-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px 12px;margin-bottom:8px}
+.workspace .section-head h1,.section-head h2{margin:0}
+.section-head a{font-size:13px}
+.dash-tasks{list-style:none;margin:0;padding:0}
+.dash-task{min-height:36px}
+.dash-deadline{font-size:13px;color:#52647b;padding:2px 8px;border-radius:6px;background:#f0f3f8}
+.dash-deadline.overdue{color:#a33b17;background:#fff0e5;font-weight:650}
+.pager{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:6px 10px;margin-top:8px}
+.pager button,.settings-page button,.exports-page button,.case-list .purchase-tools button{
+ min-height:38px;padding:6px 12px;font-size:14px;line-height:1.4
+}
+.pager[hidden]{display:none}
+.pager button[aria-disabled="true"]{opacity:.5;cursor:default}
+.pager output{font-size:13px;color:var(--mut);font-variant-numeric:tabular-nums}
+.compact-table th,.compact-table td{padding:7px 10px}
+.compact-table td:first-child{overflow-wrap:anywhere}
+.case-list .card{padding:14px 16px}
+.case-list .filter-bar{margin-bottom:8px}
+.case-list .list-trash{margin:0}
+.case-list .case-actions{align-items:center;margin:0 0 10px}
+.case-list .purchase-tools{display:flex;align-items:end;flex-wrap:wrap;gap:6px 14px;margin-bottom:10px}
+.case-list .purchase-tools h2{flex-basis:100%;margin:0}
+.case-list .purchase-tools .acts{margin:0}
+.case-list .purchase-tools input{padding:6px 9px;min-height:38px}
+.settings-page [hidden]{display:none!important}
+.settings-page .g,.company-summary,.exports-page .g{
+ display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px 20px
+}
+.company-summary{margin:0;gap:0 24px}
+.company-summary>div{
+ display:grid;grid-template-columns:minmax(105px,1fr) minmax(0,2fr);gap:4px 12px;
+ padding:9px 0;border-bottom:1px solid #e5ebf3;align-items:baseline
+}
+.company-summary dt{font-size:13px;color:var(--mut)}
+.company-summary dd{margin:0;font-weight:600;overflow-wrap:anywhere;white-space:pre-wrap}
+.settings-page .f,.exports-page .f{gap:4px;min-width:0}
+.settings-page :is(input,select,textarea),.exports-page :is(input,select){
+ font-size:14px;padding:7px 10px;min-height:38px;min-width:0
+}
+.settings-page .acts,.exports-page .acts{margin-top:12px}
+.settings-page p,.settings-page .section-head{margin-top:0}
+.settings-page .table-scroll{margin-top:8px}
+.settings-page .sub-editor{border-top:1px solid var(--line);margin-top:12px;padding-top:12px}
+.settings-page details{align-self:center;font-size:14px}
+.settings-page details button{margin-top:6px}
+.company-seal{display:flex;align-items:center;gap:10px 14px;margin-top:12px}
+.company-seal img{width:64px;height:64px;object-fit:contain}
+.company-seal h3,.company-seal p{margin:0}
+.exports-grid{grid-template-columns:minmax(0,3fr) minmax(0,2fr)}
+.exports-page .export-evidence{grid-column:1 / -1;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:6px 12px}
+.export-evidence h2{grid-column:1 / -1;margin-bottom:2px}
+.export-evidence .acts{margin:0}
+@media(max-height:900px) and (min-width:721px){
+ .dashboard-view,.settings-page,.exports-page{--panel-pad:14px;--panel-gap:10px}
+ .dash-task{min-height:32px}
+ .company-summary>div{padding:7px 0}
+}
+@media(max-height:780px) and (min-width:1101px){
+ .dashboard-view{--panel-pad:12px;--panel-gap:8px}
+ .dashboard-view .dash-task:nth-child(n+4){display:none}
+}
+@media(max-width:1100px){
+ .dash-top{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .exports-page .export-evidence{grid-template-columns:minmax(0,1fr)}
+ .exports-page .export-evidence .acts{margin-top:4px}
+}
+@media(max-width:950px){
+ .dash-middle,.exports-grid,.company-summary{grid-template-columns:minmax(0,1fr)}
+}
+@media(max-width:560px){
+ .dashboard-view,.settings-page,.exports-page{--panel-pad:12px;--panel-gap:10px}
+ .settings-page .g,.exports-page .g{grid-template-columns:minmax(0,1fr)}
+ .dash-task{grid-template-columns:minmax(0,1fr);justify-items:start;gap:3px}
+}
+@media(max-width:390px){
+ .dash-top{grid-template-columns:minmax(0,1fr)}
+}
+
+#case-editor:has(#panel-sub:not([hidden])) .case-info-strip{display:none}
+.funding-panel{grid-column:1/-1;min-width:0}.funding-panel h3{margin:0 0 8px;color:var(--navy)}
+.funding-case{margin:0 0 12px;overflow-wrap:anywhere}.funding-case span{color:var(--mut);font-size:13px}
+.funding-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:10px 0 14px}
+.funding-summary>div{background:#e2eaff;border:1px solid #ccd9f4;border-radius:8px;padding:10px;min-width:0}
+.funding-summary span,.funding-summary strong{display:block}.funding-summary span{font-size:12px;color:var(--mut)}.funding-summary strong{font-size:18px;overflow-wrap:anywhere;margin-top:4px}
+.funding-entry{display:grid;grid-template-columns:minmax(0,1fr) 150px;gap:10px;border-bottom:1px solid var(--line);padding:10px 0;align-items:center;min-width:0}
+.funding-entry>label:first-child{display:flex;align-items:center;gap:8px;min-width:0}.funding-entry small{display:block;color:var(--mut);font-size:12px}.funding-entry b{font-size:14px;overflow-wrap:anywhere}
+.funding-panel input[type=checkbox]{width:18px;min-height:18px;height:18px;flex:none}.funding-check{display:flex;gap:8px;align-items:center;margin:10px 0;font-size:13px}
+.funding-cash,.funding-consent,.funding-details,.funding-plan{margin-top:12px}.funding-panel .g{gap:10px;grid-template-columns:repeat(2,minmax(0,1fr))}.funding-panel summary{cursor:pointer;color:var(--navy);padding:8px 0;font-size:13px}.funding-details{border-top:1px solid var(--line)}.funding-preview{background:#e9f0ff;padding:10px;border-radius:8px;font-size:13px}
+.funding-entry[hidden],.funding-panel [hidden]{display:none!important}
+@media(max-width:720px){.funding-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.funding-entry{grid-template-columns:minmax(0,1fr) 110px}.funding-summary strong{font-size:16px}.funding-panel .g{grid-template-columns:minmax(0,1fr)}}
+
+</style></head><body>
+<div id="app"></div><div id="toast"></div>
+<script src="/workflow.js"></script>
+<script src="/funding.js"></script>
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const Y=n=>n==null?'―':(n<0?'−':'')+'¥'+Math.abs(Number(n)).toLocaleString('ja-JP');
+const G=id=>document.getElementById(id).value;
+const legacyTaxModes={sale:'売買型',deposit:'預り金型'};
+let toastT;
+function toast(m,bad){
+ const active=[...document.querySelectorAll('dialog[open]')].at(-1);
+ const previous=$('.modal-toast');
+ previous?.remove();
+ if(active){
+  const notice=document.createElement('p');
+  notice.className='modal-toast'+(bad?' bad':'');
+  notice.setAttribute('role',bad?'alert':'status');
+  notice.textContent=m;
+  active.append(notice);
+  setTimeout(()=>notice.remove(),5000);
+  return;
+ }
+ const t=$('#toast');t.textContent=m;t.className=bad?'bad':'';t.style.display='block';
+ clearTimeout(toastT);toastT=setTimeout(()=>t.style.display='none',3500);
+}
+async function api(m,u,b){const r=await fetch(u,{method:m,headers:{'Content-Type':'application/json','X-Requested-With':'app'},body:b?JSON.stringify(b):undefined});
+ const j=await r.json().catch(()=>({}));if(r.status===401&&u!=='/api/login'){boot();throw new Error('auth')}if(!r.ok)throw new Error(j.error||'エラーが発生しました');return j}
+async function act(fn,msg){try{await fn();if(msg)toast(msg)}catch(e){if(e.message!=='auth')toast(e.message,true)}}
+function fld(l,id,v,o={}){o=o||{};const inner=o.sel!=null?`<select id="${id}">${o.sel}</select>`:o.area?`<textarea id="${id}" rows="3">${esc(v)}</textarea>`:`<input id="${id}" value="${esc(v)}" ${o.type?`type="${o.type}"`:''} ${o.inputmode?`inputmode="${o.inputmode}"`:o.num?'inputmode="numeric"':''} ${o.ph?`placeholder="${esc(o.ph)}"`:''}>`;return `<label class="f">${l}${inner}</label>`}
+const opts=(list,sel,k='id',lab='name')=>list.map(x=>`<option value="${x[k]}" ${String(x[k])===String(sel)?'selected':''}>${esc(x[lab])}</option>`).join('');
+const row=(l,v,b)=>`<div class="row"><span>${l}</span><span class="${b?'big':''}">${v}</span></div>`;
+const menu = [
+ ['#/','ダッシュボード','M3 3h7v7H3z M14 3h7v7h-7z M3 14h7v7H3z M14 14h7v7h-7z'],
+ ['#/cases','案件管理','M9 5h12 M9 12h12 M9 19h12 M3 5h1 M3 12h1 M3 19h1'],
+ ['#/purchases','仕入と支払','M3 3h3l2 12h10l3-8H7 M10 20h.1 M18 20h.1'],
+ ['#/principal','下請けの元金','M8 4H3v5 M3 4l7 7 M16 20h5v-5 M21 20l-7-7'],
+ ['#/haak','ハークへの請求','M3 7h18v13H3z M3 11h18 M15 16h3'],
+ ['#/monthly','月次精算','M3 5h18v16H3z M7 3v4m10-4v4M3 10h18m-13 5 2 2 5-4'],
+ ['#/profit','精算と利益','M4 18v-5 M10 18V8 M16 18V3 M22 18H2'],
+ ['#/exports','帳票・データ出力','M7 3h12v16H7z M3 7v15h12 M10 8h6 M10 12h6'],
+ ['#/settings','設定','M4 6h16 M4 12h16 M4 18h16 M8 4v4 M15 10v4 M10 16v4'],
+ ['#/trash','削除ボックス','M3 6h18 M9 6V3h6v3 M6 6l1 15h10l1-15 M10 10v7 M14 10v7'],
+ ['#/deadlines','支払・精算期限と入金確認']
+];
+function nav(on){
+ if(['#/purchases','#/principal','#/haak','#/profit','#/trash'].includes(on))on='#/cases';
+ if(on==='#/deadlines')on='#/';
+ return `<aside><a class="brand" href="#/" aria-label="TOMOS ホーム"><img src="/static/logibox.svg" alt=""><span>TOMOS</span><small>Business Management</small></a><button class="mobile-nav" aria-controls="navigation" aria-expanded="false" onclick="this.setAttribute('aria-expanded',this.parentElement.classList.toggle('expanded'))">メニュー</button><nav id="navigation" aria-label="業務メニュー">${menu.filter(x=>["#/","#/cases","#/monthly","#/exports","#/settings"].includes(x[0])).map(([href,label,path])=>`<a href="${href}" aria-label="${label}" ${on===href?'class="on" aria-current="page"':''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="${path}"/></svg>${label}</a>`).join('')}<span class="version">ver.0.6.5</span></nav><button class="logout" onclick="logout()">ログアウト</button></aside>`;
+}
+function page(on,html){$('#app').className='workspace';$('#app').innerHTML=nav(on)+`<main>${html}</main>`}
+async function boot(){const s=await fetch('/api/state').then(r=>r.json());
+ if(!s.logged){$('#app').className='auth-screen';$('#app').innerHTML=`<main class="auth-card"><div class="auth-brand">TOMOS<span>.</span></div><h1>${s.setup?'おかえりなさい。':'はじめまして。'}</h1><p class="auth-intro">${s.setup?'パスワードを入力して業務をはじめましょう。':'8文字以上のパスワードを設定して業務をはじめましょう。'}</p><form onsubmit="event.preventDefault();login(${s.setup})"><label class="f" for="pw">パスワード<input id="pw" type="password" autocomplete="${s.setup?'current-password':'new-password'}" required ${s.setup?'':'minlength="8"'}></label><button type="submit">${s.setup?'ログイン':'設定して始める'}</button></form><details class="recovery-help"><summary>パスワードを忘れた場合</summary><p>Windowsの管理者に依頼してください。PCを再起動してLOGIBOXを開く前に、アプリのフォルダにある「パスワード再設定.vbs」を開きます。管理者確認とバックアップ後に再設定できます。詳しくは同梱の「パスワード復旧手順.txt」を参照してください。</p></details></main>`;return}
+ route()}
+function login(setup){act(async()=>{await api('POST',setup?'/api/login':'/api/setup',{password:G('pw')});boot()})}
+function logout(){act(async()=>{await api('POST','/api/logout');boot()})}
+function route(){const h=location.hash||'#/';const m=h.match(/^#\/case\/(\d+)(?:\/(purchase|sub|haak|docs))?$/);
+ if(!m)$('#case-editor')?.remove();
+ act(async()=>{if(m)await viewCase(+m[1],m[2]||'basic');else if(h==='#/trash')await viewTrash();else if(h==='#/settings')await viewSettings();else if(h.split('?')[0]==='#/monthly')await viewMonthly(h.split('?')[1]);else if(h==='#/exports')await viewExports();else if(h==='#/deadlines')await viewDeadlines();else if(['#/cases','#/purchases','#/principal','#/haak','#/profit'].includes(h))await viewCases(h);else await viewDash()})}
+addEventListener('hashchange',route);
+
+function paginate(content,pager,perPage,render,label){
+ pager.innerHTML='<button class="s" type="button">前へ</button><output></output><button class="s" type="button">次へ</button>';
+ pager.setAttribute('role','group');
+ pager.setAttribute('aria-label',label+'のページ切り替え');
+ const [previous,status,next]=pager.children;
+ let items=[],index=0;
+ function update(){
+  const count=Math.ceil(items.length/perPage), start=index*perPage, end=Math.min(start+perPage,items.length);
+  content.innerHTML=render(items.slice(start,end));
+  pager.hidden=count<2;
+  previous.setAttribute('aria-disabled',String(index===0));
+  next.setAttribute('aria-disabled',String(index>=count-1));
+  status.textContent=count?`${start+1}〜${end}件 / 全${items.length}件（${index+1}/${count}ページ）`:'';
+ }
+ previous.onclick=()=>{if(index>0){index--;update()}};
+ next.onclick=()=>{if((index+1)*perPage<items.length){index++;update()}};
+ return entries=>{items=entries;index=0;update()};
+}
+
+function dashboardPartnerName(name){
+ const match=String(name||'').match(/^(.*?)\s*[（(]([^()（）]+)[）)]\s*$/);
+ return match?`${esc(match[1])}<small>${esc(match[2].normalize('NFKC'))}</small>`:esc(name);
+}
+function deadlineRows(items,today=localToday()){
+ return items.map(x=>{
+  const href=x.period?'#/monthly?'+x.period:'#/case/'+x.id+'/'+x.tab;
+  const overdue=x.due&&x.due<today;
+  return `<li class="dash-task"><a class="case" href="${esc(href)}">${esc(x.text)}</a><span class="dash-deadline ${overdue?'overdue':''}">${overdue?'期限超過　':''}${esc(x.due||'期限未設定')}</span></li>`;
+ }).join('');
+}
+async function viewDeadlines(){
+ const {todo}=await api('GET','/api/dashboard');
+ page('#/deadlines',`<div class="deadline-list"><header class="section-head"><h1>支払・精算期限と入金確認</h1><a href="#/">ダッシュボードに戻る</a></header>
+ <section class="card"><ul class="dash-tasks" id="all-deadlines"></ul>${todo.length?'':'<p class="dash-note">いまやることはありません。</p>'}<div class="pager" id="deadline-pager"></div></section></div>`);
+ paginate($('#all-deadlines'),$('#deadline-pager'),12,deadlineRows,'期限一覧')(todo);
+ window.scrollTo(0,0);
+}
+async function viewDash(){
+ const d=await api('GET','/api/dashboard'), t=d.totals;
+ const stat=(label,value,detail,link)=>`<article class="card"><h2><a href="${link}">${label}</a></h2><div class="dash-money">${value}</div>${detail?`<p class="dash-note">${detail}</p>`:''}</article>`;
+ page('#/',`<div class="dashboard-view"><h1>ダッシュボード</h1>
+ <div class="dash-top">
+ ${stat('管理中案件',t.cases+'件','','#/cases')}
+ ${stat('仕入総額（税込）',Y(t.purchase),'','#/purchases')}
+ ${stat('ハークへの請求見込額',Y(t.haak_planned_total),`要確認：仕入済み・請求額未確定 <a href="#/haak">${t.haak_unconfirmed_cases}件</a>`,'#/haak')}
+ ${stat('自社利益（確定案件）',Y(t.own),'','#/profit')}
+ </div>
+ <div class="dash-middle"><section class="card dash-partners"><h2>下請け元金・未精算状況</h2>
+ <div class="dash-metrics">
+ <div class="dash-metric dash-principal-total"><span>元金残高 合計</span><strong class="dash-money">${Y(t.principal)}</strong></div>
+ <div class="dash-metric dash-unsettled"><a href="#/monthly">下請け未精算利益 合計</a><strong class="dash-money">${Y(t.sub_unsettled_profit)}</strong><small>元金を含まない利益のみ</small></div></div>
+ <div class="dash-partner-list" id="dash-partners"></div><div class="pager" id="partner-pager"></div></section>
+ <section class="card"><h2>利益サマリー</h2>
+ <div class="dash-profit-row"><span><a href="#/profit">全体利益（確定案件）</a></span><strong class="dash-money">${Y(t.total_profit)}</strong></div>
+ <div class="dash-profit-row"><span>自社利益（確定前の見込）</span><strong>${Y(t.own_provisional)}</strong></div>
+ <h3 class="dash-progress-title">案件の進捗</h3><dl class="dash-progress">${Object.entries(d.progress).map(([label,count])=>`<div><dt>${esc(label)}</dt><dd>${count}件</dd></div>`).join('')}</dl></section></div>
+ <section class="card dash-deadlines"><header class="section-head"><h2>支払・精算期限と入金確認</h2><a href="#/deadlines">全件を見る（${d.todo.length}件）</a></header>
+ ${d.todo.length?`<ul class="dash-tasks">${deadlineRows(d.todo.slice(0,5))}</ul>`:'<p class="dash-note">いまやることはありません。</p>'}</section></div>`);
+ const partnerRows=items=>items.map(s=>`<div class="dash-partner"><span class="dash-partner-name">${dashboardPartnerName(s.name)}</span><dl><dt>元金残高</dt><dd>${Y(s.principal)}</dd><dt class="principal-available">うち充当可能額</dt><dd class="principal-available">${Y(s.available)}</dd></dl></div>`).join('')||'<p class="dash-note">下請けの登録はありません。</p>';
+ paginate($('#dash-partners'),$('#partner-pager'),4,partnerRows,'下請け元金')(d.principals||[]);
+}
+
+async function viewCases(view='#/cases'){
+ const [l,master]=await Promise.all([api('GET','/api/cases'),api('GET','/api/master')]);
+ EP=null;
+ READ_PDF=null;
+ const tab={'#/purchases':'/purchase','#/principal':'/sub','#/haak':'/haak'}[view]||'';
+ const cases=view==='#/principal'?l.filter(x=>x.subs):l;
+ const columns={
+  '#/cases':[['下請け',x=>x.subs+'社'],['仕入額',x=>Y(x.purchase_total)],['自社利益',x=>Y(x.own_profit)+(x.confirmed?'':'（見込）')]],
+  '#/purchases':[['仕入額',x=>Y(x.purchase_total)],['仕入未払い',x=>Y(x.purchased_unpaid)]],
+  '#/principal':[['担当元金',x=>Y(x.principal)],['確認済元金',x=>Y(x.principal_confirmed)],['未確認元金',x=>Y(x.principal-x.principal_confirmed)]],
+  '#/haak':[['確定請求額',x=>Y(x.haak_amount)],['入金日',x=>esc(x.haak_paid||'―')]],
+  '#/profit':[['全体利益',x=>Y(x.total_profit)],['下請け利益',x=>Y(x.sub_profit)],['自社利益',x=>Y(x.own_profit)]]
+ }[view];
+ page(view,`<div class="case-list"><h1>${menu.find(x=>x[0]===view)[1]}</h1>
+ ${view==='#/cases'?'<div class="acts case-actions"><button onclick="newCaseForm(true)">LINE文章から登録</button><button class="s" onclick="newCaseForm(false)">手入力で登録</button><a class="list-trash" href="#/trash">削除ボックス</a></div><div id="nf"></div>':''}
+ ${['#/cases','#/purchases'].includes(view)?purchasePdfTool()+purchaseForm(master.suppliers,null):''}
+ <section class="card"><div class="filter-bar"><input id="case-search" type="search" aria-label="案件を検索" placeholder="管理番号・案件番号・案件名"><select id="case-filter" aria-label="進捗で絞り込む"><option value="">すべての進捗</option><option value="登録">登録</option><option value="仕入済">仕入済</option><option value="請求額確定">請求額確定</option><option value="入金済">入金済</option></select></div>
+ <div class="table-scroll"><table class="data-table compact-table"><thead><tr><th>案件</th><th>納期</th><th>進捗</th>${columns.map(([name])=>`<th>${name}</th>`).join('')}</tr></thead><tbody id="case-rows"></tbody></table></div>
+ <p id="no-cases" class="m" role="status" hidden>該当する案件はありません。</p><div class="pager" id="case-pager"></div></section></div>`);
+ const renderRows=items=>items.map(x=>`<tr><td><a href="#/case/${x.id}${tab}">${esc(x.mgmt_no)} ${esc(x.name)}</a>${x.case_no?`<br><span class="m">${esc(x.case_no)}</span>`:''}</td><td>${esc(x.due_date||'―')}</td><td><span class="t ${x.confirmed?'g':'w'}">${esc(x.progress)}</span>${view==='#/profit'&&!x.confirmed?'<br><span class="m">見込</span>':''}</td>${columns.map(([,render])=>`<td class="amount">${render(x)}</td>`).join('')}</tr>`).join('');
+ const showCases=paginate($('#case-rows'),$('#case-pager'),8,renderRows,'案件一覧');
+ const normalize=value=>value.normalize('NFKC').toLowerCase();
+ const searchable=cases.map(item=>({item,text:normalize([item.mgmt_no,item.case_no,item.name].filter(Boolean).join(' '))}));
+ function filterCases(){
+  const query=normalize(G('case-search').trim()), stage=G('case-filter');
+  const matches=searchable.filter(({item,text})=>(!stage||item.progress===stage)&&text.includes(query));
+  showCases(matches.map(({item})=>item));
+  $('#no-cases').hidden=matches.length>0;
+ }
+ $('#case-search').oninput=filterCases;
+ $('#case-filter').onchange=filterCases;
+ filterCases();
+}
+const caseInputFields = [
+ ['name','案件名(必須)'],
+ ['case_no','案件番号(任意)'],
+ ['planned_rate_pct','予定利益率(%) (必須)',{inputmode:'decimal'}],
+ ['start_date','開始日',{type:'date'}],
+ ['due_date','納期',{type:'date'}],
+ ['maker','メーカー(任意)',{area:true}],
+ ['purchase_limit_tax_in','税込仕入限度額(円)',{num:1}],
+];
+function caseInputField(key,label,options,fromLine){
+ const id='n_'+key;
+ const value=key==='planned_rate_pct'&&!fromLine?'7':'';
+ return `<div class="${key==='maker'?'case-maker':''}">${fld(label,id,value,options)}
+  ${fromLine?`<small id="${id}_review" class="case-warning" hidden>確認が必要</small>`:''}</div>`;
+}
+function updateLineFieldReview(input,missing=input.dataset.lineMissing==='true'){
+ input.dataset.lineMissing=String(missing);
+ const note=document.getElementById(input.id+'_review');
+ note.hidden=!missing||input.value.trim()!=='';
+ if(note.hidden)input.removeAttribute('aria-describedby');
+ else input.setAttribute('aria-describedby',note.id);
+}
+function newCaseForm(fromLine){
+ const entry = fromLine ? `<div class="card"><h2>LINE文章から登録</h2>
+  ${fld('LINEの案件案内を貼り付け','line_notice','',{area:true})}
+  <div class="acts"><button class="s" type="button" onclick="previewLineCase(this.form)">文章を解析</button></div>
+  <p id="line_status" role="status"></p></div>` : '';
+ $('#nf').innerHTML = `<form onsubmit="event.preventDefault();createCase(this)"><fieldset>${entry}
+  <div class="card"><h2>${fromLine?'案件情報を確認・修正':'手入力で登録'}</h2>
+  <div class="g">${caseInputFields.map(([key,label,options])=>caseInputField(key,label,options,fromLine)).join('')}</div>
+  <p id="case_duplicate" class="case-warning" role="alert"></p>
+  <p id="case_save_error" class="case-warning" role="alert"></p>
+  <div class="acts"><button id="case_submit" type="submit" ${fromLine?'disabled':''}>案件を登録</button></div></div>
+  </fieldset></form>`;
+ $('#n_case_no').addEventListener('input',()=>{$('#case_duplicate').textContent='';$('#case_save_error').textContent=''});
+ if(fromLine){
+  const inputs=caseInputFields.map(([key])=>$('#n_'+key));
+  for(const input of inputs)input.addEventListener('input',()=>updateLineFieldReview(input));
+  $('#line_notice').addEventListener('input',()=>{
+   for(const input of inputs)updateLineFieldReview(input,false);
+   $('#case_submit').disabled = true;
+   $('#case_duplicate').textContent = '';
+   $('#case_save_error').textContent = '';
+   $('#line_status').textContent = '';
+  });
+ }
+ $(fromLine?'#line_notice':'#n_name').focus();
+}
+async function previewLineCase(form){
+ const controls = form.querySelector('fieldset');
+ const status = form.querySelector('#line_status');
+ const submit = form.querySelector('#case_submit');
+ const notice = form.querySelector('#line_notice');
+ controls.disabled = true;
+ status.textContent = '解析しています…';
+ try {
+  const result = await api('POST','/api/cases/line-preview',{text:notice.value});
+  if(!form.isConnected) return;
+  for(const [key] of caseInputFields){
+   const input=form.querySelector('#n_'+key);
+   const value=result.fields[key];
+   input.value=value ?? '';
+   updateLineFieldReview(input,value==null);
+  }
+  form.querySelector('#case_duplicate').textContent = result.duplicate || '';
+  form.querySelector('#case_save_error').textContent = '';
+  status.textContent = ['入力欄を確認し、必要な項目を修正・入力してください。',...result.warnings].join(' ');
+  submit.disabled = false;
+ } catch(e) {
+  if(e.message!=='auth') status.textContent = e.message;
+ } finally {
+  controls.disabled = false;
+ }
+}
+let createdCaseNotice=null;
+async function createCase(form){
+ if(form.querySelector('#case_submit').disabled) return;
+ const fields = Object.fromEntries(caseInputFields.map(([key])=>[key,form.querySelector('#n_'+key).value]));
+ const controls = form.querySelector('fieldset');
+ const error = form.querySelector('#case_save_error');
+ controls.disabled = true;
+ error.textContent = '';
+ try {
+  const result = await api('POST','/api/cases',fields);
+  if(!form.isConnected) return;
+  createdCaseNotice={id:result.id,number:result.mgmt_no};
+  location.hash = '#/case/'+result.id+'/purchase';
+ } catch(e) {
+  if(e.message!=='auth'){
+   const duplicate = form.querySelector('#case_duplicate');
+   if(duplicate.textContent !== e.message) error.textContent = e.message;
+  }
+ } finally {
+  controls.disabled = false;
+ }
+}
+
+let CUR={},CASE_VIEW_REQUEST=0;
+async function viewCase(id,tab='basic'){const request=++CASE_VIEW_REQUEST;const [v,m,a,docs]=await Promise.all([api('GET','/api/cases/'+id),api('GET','/api/master'),api('GET','/api/cases/'+id+'/attachments'),api('GET','/api/cases/'+id+'/documents')]);if(request!==CASE_VIEW_REQUEST)return;CUR={v,m,a,docs,funding:Object.fromEntries(v.subs.map(s=>[s.slot,s.funding]))};EP=null;READ_PDF=null;DOC_PREVIEW_TOKEN=null;
+ const c=v.case,k=v.calc,trashed=!!c.deleted_at;
+ const over=c.purchase_limit_tax_in&&k.purchase_total>c.purchase_limit_tax_in?`<p style="color:var(--bad)">仕入額が税込仕入限度額(${Y(c.purchase_limit_tax_in)})を超えています。</p>`:'';
+ const subCard=slot=>{const s=v.subs.find(x=>x.slot===slot);const rate=s?s.fee_rate_pct:2;
+  const legacy=!!s&&s.tax_mode!=='consignment';
+  return `<div class="card"><h2>${s?esc(s.settlement_no||'')+'　':''}下請け${slot}${s?' '+esc(s.sub_name):''}</h2><div class="g">${fld('下請け','s'+slot+'_id','',{sel:'<option value="">選択してください</option>'+opts(m.subs,s&&s.sub_id)}).replace('<select',`<select onchange="refreshFunding(${c.id},${slot})"`)}${fld('担当元金(税込・円)','s'+slot+'_pr',s?s.principal_tax_in:'',{num:1}).replace('<input',`<input oninput="fundingTotals(${slot})"`)}${fundingPanel(c.id,slot,s,CUR.funding[slot])}<details style="grid-column:1/-1"><summary>手数料・精算設定</summary><div class="g">${fld('手数料率(%)','s'+slot+'_fee',rate,{num:1})}<div class="f"><span>元金の扱い</span><span>販売委託型（固定）</span></div><input type="hidden" id="s${slot}_rec" value="${esc(s&&s.principal_received_date||'')}">${fld('精算予定日(空欄=納期の翌月15日)','s'+slot+'_set',s&&s.settle_date||'',{type:'date'})}</div></details></div>
+  ${legacy?`<p class="purchase-warning">移行対象。保存済みの設定は「${esc(legacyTaxModes[s.tax_mode])}」です。</p>`:''}
+ ${s?`<details><summary>利益・帳票の計算内訳</summary><div style="margin-top:10px">${row('下請け利益 = 元金 ×(予定利益率 − 手数料率)',Y(s.sub_profit),1)}${row('自社の手数料利益',Y(s.fee))}${row('確認済元金',Y(s.principal_confirmed))}${s.carry_reserved?row('他案件からの充当予定（現金入金は差引残額）',Y(s.carry_reserved)):''}${row('下請けへの振込額(充当なし)',Y(s.payout))}${row('元金請求書(税抜 + 消費税10%)',Y(s.principal_ex)+' + '+Y(s.principal_tax))}${row('月次精算の支払期限',esc(s.settle_date_auto||'納期を入力してください'))}</div></details>`:''}
+  ${trashed?'':`<div class="acts">${legacy?'':`<button onclick="saveSub(${c.id},${slot})">保存</button>`}${s?`<button class="d" onclick="delSub(${c.id},${slot})">この下請けを外す</button>`:''}</div>`}</div>`};
+ const h=v.haak;
+ openCaseEditor(tab,`${esc(c.mgmt_no)} ${esc(c.name)} ${trashed?'<span class="t w">削除ボックス内</span>':''}`,`${over}
+ <div class="card"><h2>計算の流れ</h2>${row('仕入額(税込)',Y(k.purchase_total))}${row('ハーク請求の見込(仕入 ×(1+'+c.planned_rate_pct+'%))',Y(k.planned_amount))}${row('ハーク請求額(使用中:'+(k.confirmed?'確定額':'見込')+')',Y(k.basis_amount))}${row('全体の利益',Y(k.total_profit),1)}${row('− 下請け利益(合計)',Y(k.sub_profit_total))}${row('= 自社の利益',Y(k.own_profit),1)}<div class="m">内訳:自社分 ${Y(k.own_base)} + 手数料 ${Y(k.fee_total)} + 予定を超えた差額 ${Y(k.over_planned)}</div></div>
+ <div class="card"><h2>基本</h2><div class="g">${fld('案件名','c_name',c.name)}${fld('案件番号(任意)','c_no',c.case_no)}${fld('予定利益率(%)','c_rate',c.planned_rate_pct,{num:1})}${fld('開始日','c_start',c.start_date,{type:'date'})}${fld('納期','c_due',c.due_date,{type:'date'})}<div class="case-maker">${fld('メーカー','c_maker',c.maker,{area:true})}</div>${fld('税込仕入限度額(円)','c_lim',c.purchase_limit_tax_in,{num:1})}</div>${trashed?'':`<div class="acts"><button onclick="saveCase(${c.id})">保存</button></div>`}</div>
+ <div class="card" id="purchase_section"><h2>仕入と支払</h2>
+ ${v.purchases.map(p=>`<section class="purchase-entry"><div class="row"><span><b>${esc(p.supplier_name)}</b> ${Y(p.amount_tax_in)} <span class="m">請求日 ${esc(p.invoice_date||'―')} / 期限 ${esc(p.due_date||'―')} / 支払済 ${Y(p.paid_amount)}</span></span><span>${trashed?'':`<button class="s" onclick="editP(${p.id})">編集</button> <button class="d" onclick="delP(${p.id})">削除</button>`}</span></div>
+ ${purchaseAttachments(a.filter(x=>x.purchase_id===p.id),trashed)}</section>`).join('')||'<p class="m">仕入はまだありません。</p>'}
+ ${a.some(x=>x.purchase_id===null)?`<section class="purchase-entry"><h3>案件に直接添付した書類</h3>${a.filter(x=>x.purchase_id===null).map(x=>attachmentRow(x,trashed)).join('')}</section>`:''}
+ ${trashed?'':`${purchasePdfTool()}
+ ${purchaseForm(m.suppliers,c.id)}`}</div>
+ <p class="m">販売委託型はアプリの運用設定です。税務上の取扱いは別途確認してください。</p>
+ ${subCard(1)}${subCard(2)}
+ <div class="card"><h2>案件の精算履歴</h2>${v.settlement_history.map(item=>`<div class="row"><a href="#/monthly?${item.period}">${esc(item.settlement_no||'')} ${esc(item.period)} ${esc(item.sub_name)}</a><span class="t">${settlementLabels[item.status]}</span><span>${Y(item.principal+item.sub_profit-item.carry_over)}</span></div>`).join('')||'<p class="m">精算記録はありません。</p>'}</div>
+ <div class="card"><h2>ハークへの請求</h2><div class="g">${fld('ハークから連絡された確定額(税込・円)','h_amt',h.confirmed_amount_tax_in,{num:1,ph:'未連絡なら空欄(見込を使います)'})}${fld('請求日','h_bd',h.billing_date,{type:'date'})}${fld('支払期限','h_due',h.due_date,{type:'date'})}${fld('入金確認日','h_pd',h.paid_date,{type:'date'})}${fld('実入金累計額（税込・円／空欄は全額入金）','h_actual',h.actual_paid_amount,{num:1})}${fld('請求書に記載する内容','h_items',h.items_text)}${fld('請求書の備考','h_note',h.note)}</div><label class="f" style="flex-direction:row;align-items:center;margin-top:8px"><input type="checkbox" id="h_chk" style="width:auto;min-height:auto" ${h.confirmed_checked?'checked':''}>ハークから連絡された確定金額を確認済み</label>${trashed?'':`<div class="acts"><button onclick="saveHaak(${c.id})">保存</button></div>`}</div>
+ <div class="card"><h2>請求書・領収書の発行</h2><p class="m">PDFを作成する場合だけ操作してください。ハーク請求の金額・日付の登録は「ハーク請求」タブの保存で完了しており、ここでの操作は不要です。領収書は入金確認後に発行してください。</p>
+ ${docs.map(d=>`<div class="row"><span>${esc({'principal_invoice':'元金請求書','receipt':'領収書','haak_invoice':'ハーク請求書'}[d.doc_type])}　${esc(d.snapshot.doc_no)}　${Y(d.amount_tax_in)} <span class="m">第${d.revision}版</span></span><span><button class="s" type="button" onclick="showIssuedDocument(${d.id})">PDFを表示</button>　<button class="s" onclick="showDocumentHistory(${d.id})">履歴・編集</button></span></div>`).join('')||'<p class="m">書類はまだありません。</p>'}
+ ${trashed?'':`<div id="document_form" oninput="invalidateDocumentPreview()" onchange="invalidateDocumentPreview()"><div class="g" style="margin-top:12px">${fld('書類の種類','doc_type','',{sel:'<option value="principal_invoice">元金請求書</option><option value="receipt">領収書</option><option value="haak_invoice">ハーク請求書</option>'})}${fld('対象下請け（ハーク請求書は不要）','doc_sub','',{sel:'<option value="">選択してください</option>'+opts(m.subs)})}${fld('発行日','doc_date',new Date().toISOString().slice(0,10),{type:'date'})}${fld('領収書の受領日','doc_received','',{type:'date'})}${fld('領収書の受領額（円）','doc_amount','',{num:1})}${fld('支払期限','doc_due','',{type:'date'})}${fld('領収方法','doc_method','銀行振込')}${fld('備考','doc_note','')}</div><div id="principal_item_names" style="margin-top:10px">${fld('参考商品明細（1行に1商品）','document_item_names',v.principal_items_text,{area:true})}</div>
+ <div class="acts"><button class="s" type="button" onclick="previewCaseDocument(${c.id},this)">仮プレビュー</button><button id="issue_document" type="button" onclick="createCaseDocument(${c.id},this)" disabled>正式発行</button></div></div>`}
+ <div id="doc_extra"></div></div>
+ <div class="acts">${trashed?`<button onclick="restore(${c.id})">削除ボックスから復元</button>`:`<button class="d" onclick="trashCase(${c.id})">見送り・削除ボックスへ移す</button>`}</div>`)}
+function openCaseEditor(active,title,markup){
+ const tabs=[['basic','基本'],['purchase','仕入'],['sub','下請け'],['haak','ハーク請求'],['docs','帳票']];
+ const template=document.createElement('template');
+ template.innerHTML=markup;
+ const items=[...template.content.children];
+ const purchase=items.findIndex(x=>x.id==='purchase_section');
+ const haak=items.findIndex(x=>x.querySelector('#h_amt'));
+ const docs=items.findIndex(x=>x.querySelector('#doc_extra'));
+ const ranges=[0,purchase,purchase+1,haak,docs,items.length-1];
+ let dialog=$('#case-editor');
+ const fresh=!dialog;
+ if(fresh){
+  const returnView=$('.deadline-list')?'#/deadlines':$('nav a.on')?.getAttribute('href')||'#/cases';
+  const returnHash=returnView==='#/monthly'&&monthly?returnView+'?'+monthly.period:returnView;
+  page(returnView,`<h1>${menu.find(x=>x[0]===returnView)[1]}</h1><a href="${returnView}">一覧に戻る</a>`);
+  dialog=document.createElement('dialog');
+  dialog.id='case-editor';
+  dialog.setAttribute('aria-labelledby','case-title');
+  dialog.addEventListener('close',()=>{dialog.remove();if(/^#\/case\//.test(location.hash))location.hash=returnHash});
+  document.body.append(dialog);
+ }
+ dialog.innerHTML=`<header class="editor-head"><div class="editor-title"><h1 id="case-title">${title}</h1><button class="s" type="button" onclick="$('#case-editor').close()">閉じる</button></div><div class="editor-tabs" role="tablist" aria-label="案件編集">${tabs.map(([key,label])=>`<button type="button" role="tab" id="tab-${key}" aria-controls="panel-${key}" onclick="selectCaseTab('${key}')">${label}</button>`).join('')}</div></header><div class="editor-body"></div>`;
+ tabs.forEach(([key],index)=>{
+  const panel=document.createElement('section');
+  panel.id='panel-'+key;
+  panel.setAttribute('role','tabpanel');
+  panel.setAttribute('aria-labelledby','tab-'+key);
+  panel.append(...items.slice(ranges[index],ranges[index+1]));
+  if(key==='basic')panel.append(items.at(-1));
+  dialog.querySelector('.editor-body').append(panel);
+ });
+ dialog.querySelector('.editor-tabs').onkeydown=event=>{
+  const index=tabs.findIndex(([key])=>event.target.id==='tab-'+key);
+  const offsets={ArrowLeft:(index+tabs.length-1)%tabs.length,ArrowRight:(index+1)%tabs.length,Home:0,End:tabs.length-1};
+  if(index<0||!(event.key in offsets))return;
+  event.preventDefault();
+  const key=tabs[offsets[event.key]][0];
+  selectCaseTab(key);
+  $('#tab-'+key).focus();
+ };
+ simplifyCaseEditor();
+ for(const slot of [1,2])fundingTotals(slot);
+ selectCaseTab(active);
+ if(fresh)dialog.showModal();
+ if(createdCaseNotice?.id===CUR.v.case.id){
+  toast('管理番号 '+createdCaseNotice.number+' で登録しました。続けて仕入請求書を登録できます');
+  createdCaseNotice=null;
+ }
+}
+function selectCaseTab(tab){
+ CUR.tab=tab;
+ const dialog=$('#case-editor');
+ for(const panel of dialog.querySelectorAll('.editor-body > [role="tabpanel"]'))panel.hidden=panel.id!=='panel-'+tab;
+ for(const button of dialog.querySelectorAll('.editor-tabs [role="tab"]')){
+  const selected=button.id==='tab-'+tab;
+  button.setAttribute('aria-selected',String(selected));
+  button.tabIndex=selected?0:-1;
+ }
+ dialog.querySelector('.editor-body').scrollTop=0;
+}
+const rf=async()=>{const y=$('#case-editor .editor-body').scrollTop;await viewCase(CUR.v.case.id,CUR.tab);$('#case-editor .editor-body').scrollTop=y};
+function saveCase(id){act(async()=>{await api('PUT','/api/cases/'+id,{name:G('c_name'),case_no:G('c_no'),planned_rate_pct:G('c_rate'),start_date:G('c_start'),due_date:G('c_due'),maker:G('c_maker'),purchase_limit_tax_in:G('c_lim')});await rf()},'保存しました')}
+const attachmentAccept='application/pdf,.pdf';
+const attachmentKinds={purchase_invoice:'仕入請求書',purchase_receipt:'仕入領収書',other:'その他'};
+const invoiceInputs=[
+ ['invoice_number','請求書番号'],['case_no','PDFの案件番号'],['case_name','PDFの案件名'],
+ ['delivery_date','納品日',{type:'date'}],['amount_ex_tax_as_printed','確認する税抜金額(円)',{num:1}],
+ ['tax_as_printed','確認する消費税額(円)',{num:1}],
+];
+const itemInputs=[['name','商品名'],['maker','メーカー'],['quantity','数量',true],['unit','単位'],['unit_price','単価(円)',true],['amount_ex_tax','金額(円)',true]];
+let EP=null;
+let READ_PDF=null;
+let DOC_PREVIEW_TOKEN=null;
+
+function purchasePdfTool(){
+ return `<div class="card purchase-tools"><h2>仕入請求書PDFの読み取り</h2>
+ <label class="f">エムエスト・エムロジのPDF<input id="purchase_pdf" type="file" accept="application/pdf,.pdf"></label>
+ <p class="m">PDF添付は任意です。読み取れない場合も手入力で保存できます。</p><div class="acts"><button type="button" onclick="readPurchasePdf(this)">PDFを読み取る</button><button type="button" class="s" onclick="act(()=>startManualPurchase())">PDFなしで手入力</button></div></div>`;
+}
+function purchaseForm(suppliers,cid){
+ return `<div id="pf" data-case-id="${cid??''}" class="card" ${cid===null?'hidden':''} oninput="updatePurchasePayment()"><h2 id="pt">仕入を追加</h2><div id="purchase_read_result" role="status"></div><p id="purchase_error" class="purchase-warning" role="alert" hidden></p><div id="purchase_target"></div>
+ <div class="g">${fld('仕入先（必須）','p_sup','',{sel:'<option value="">選択してください</option>'+opts(suppliers)})}${fld('税込請求額(円・必須)','p_amt','',{num:1})}${fld('請求日','p_inv','',{type:'date'})}${fld('支払期限','p_due','',{type:'date'})}</div>
+ <p id="supplier_empty" class="m" ${suppliers.length?'hidden':''}>仕入先が未登録です。下の「仕入先を新規登録」から追加してください。</p>
+ <details id="supplier_new"><summary>仕入先を新規登録</summary><div class="g">${fld('仕入先名（必須）','p_supplier_name','')}${fld('登録番号（任意）','p_supplier_no','')}</div><div class="acts"><button type="button" class="s" onclick="addPurchaseSupplier(this)">仕入先を登録して選択</button></div></details>
+ <section style="margin:20px 0;padding:20px;border:2px solid #b9cbee;border-radius:14px;background:#f3f7ff" aria-label="仕入先への支払い">
+ <h3 style="margin-top:0">仕入先への支払い</h3>
+ <p class="m">実際に支払った金額と日付を入力してください。未払いの場合は0円・日付なしのままにします。</p>
+ <div class="g">${fld('支払済み額（税込・円）','p_paid','0',{num:1})}${fld('実際の支払日','p_pd','',{type:'date'})}</div>
+ <div class="acts"><button type="button" class="s" onclick="$('#p_paid').value=$('#p_amt').value;updatePurchasePayment()">請求額の全額を入力</button></div>
+ <p id="purchase_payment_summary" role="status" style="font-weight:700">未払い</p>
+ <p class="m">入力後、下の「保存」で支払情報を確定します。</p>
+ </section>
+ <div id="invoice_fields"></div>${fld('品名メモ (1行に1商品)','p_items','',{area:1})}
+ <div class="acts"><button id="purchase_save" onclick="saveP(${cid},this)">保存</button><button class="s" onclick="clearPurchaseForm(${cid})">入力をクリア</button></div></div>`;
+}
+function purchaseError(message=''){
+ const notice=$('#purchase_error');if(!notice)return;
+ notice.textContent=message;notice.hidden=!message;
+}
+function purchaseAction(fn){return act(async()=>{
+ purchaseError();
+ try{await fn()}catch(e){if(e.message!=='auth')purchaseError(e.message);throw e}
+})}
+async function startManualPurchase(){
+ const form=$('#pf');if(!form)return;
+ const cid=form.dataset.caseId;
+ const cases=!cid&&!EP?await api('GET','/api/cases'):null;
+ if(!form.isConnected)return;
+ READ_PDF=null;
+ $('#purchase_pdf').value='';
+ form.hidden=false;
+ $('#purchase_save').textContent='保存';$('#purchase_save').disabled=false;
+ $('#purchase_target').replaceChildren();
+ $('#purchase_read_result').textContent='PDFなしで保存します。入力済みの値はそのまま編集できます。';
+ if(cases){
+  $('#purchase_target').innerHTML=fld('登録先の案件（必須）','purchase_case','',{sel:'<option value="">選択してください</option>'+cases.map(c=>`<option value="${c.id}">${esc(purchaseCaseLabel(c))}</option>`).join('')});
+ }
+ form.scrollIntoView({block:'start'});
+}
+function addPurchaseSupplier(button){purchaseAction(async()=>{
+ button.disabled=true;
+ try{
+  const result=await api('POST','/api/suppliers',{name:G('p_supplier_name'),invoice_no:G('p_supplier_no')});
+  const master=await api('GET','/api/master');
+  if(!button.isConnected)return;
+  $('#p_sup').innerHTML='<option value="">選択してください</option>'+opts(master.suppliers,result.id);
+  $('#supplier_empty').hidden=master.suppliers.length>0;
+  $('#p_supplier_name').value='';$('#p_supplier_no').value='';$('#supplier_new').open=false;
+  toast('仕入先を登録しました');
+ }finally{button.disabled=false}
+})}
+function updatePurchasePayment(){
+ const amount=Number(G('p_amt').replace(/,/g,'')), paid=Number(G('p_paid').replace(/,/g,''));
+ const out=$('#purchase_payment_summary');if(!out)return;
+ if(!Number.isFinite(amount)||!Number.isFinite(paid)||paid<0){out.textContent='金額を確認してください';return}
+ const balance=amount-paid;
+ const status=paid===0?'未払い':balance>0?'一部支払い済み':balance===0?'全額支払い済み':'支払額が請求額を超えています';
+ out.textContent=`${status}　｜　支払済み ${Y(paid)}　／　残り ${Y(Math.max(0,balance))}${paid>0&&!G('p_pd')?'　※ 支払日を入力してください':''}`;
+}
+function clearPurchaseForm(cid){
+ act(()=>cid===null?viewCases(location.hash==='#/purchases'?'#/purchases':'#/cases'):viewCase(cid,'purchase'));
+}
+
+function purchaseAttachments(files,readOnly){
+ const invoices=files.filter(file=>file.kind==='purchase_invoice');
+ const others=files.filter(file=>file.kind!=='purchase_invoice');
+ const current=invoices.length?[invoices[0],...others]:others;
+ const previous=invoices.slice(1);
+ return current.map(file=>attachmentRow(file,readOnly)).join('')+
+  (previous.length?`<details><summary>以前の請求書（${previous.length}件）</summary>
+   ${previous.map(file=>attachmentRow(file,true)).join('')}</details>`:'');
+}
+function attachmentRow(file,readOnly){
+ return `<div class="purchase-doc"><span class="t">${attachmentKinds[file.kind]}</span>
+  <button type="button" class="s doc-name" onclick="showAttachment(${file.id})">${esc(file.original_name)}</button>
+  ${readOnly?'':`<button type="button" class="s" onclick="showReplacement(${file.id})">差し替え</button>`}</div>`;
+}
+function openDocDialog(className,markup){
+ const dialog=document.createElement('dialog');
+ dialog.className='doc-dialog '+className;
+ dialog.setAttribute('aria-labelledby','doc_dialog_title');
+ dialog.innerHTML=markup;
+ $('#app').append(dialog);
+ dialog.addEventListener('close',()=>dialog.remove(),{once:true});
+ dialog.showModal();
+ return dialog;
+}
+function showAttachment(id){
+ const file=CUR.a.find(x=>x.id===id);
+ return showDocumentPreview({
+  title:file.original_name,url:`/api/attachments/${id}/preview`,pdf:file.mime==='application/pdf',
+  download:`/api/attachments/${id}/file`,
+ });
+}
+function showIssuedDocument(id,history=false){
+ const route=`/api/${history?'document-history':'documents'}/${id}`;
+ return showDocumentPreview({
+  title:history?'発行済み書類の旧版PDF':'発行済み書類のPDF',url:route+'/preview',download:route+'/file',
+ });
+}
+async function showDocumentPreview({title,url,pdf=true,download,closeLabel='閉じる',onReady}){
+ const dialog=openDocDialog('doc-preview',`<h2 id="doc_dialog_title">${esc(title)}</h2>
+  <div class="acts">
+   <button type="button" class="s" data-close autofocus>${esc(closeLabel)}</button>
+   ${download?`<a class="doc-tool" href="${download}" download>ダウンロード</a>`:''}
+   <div class="preview-controls"><button type="button" class="s" data-out aria-label="縮小">−</button><output data-zoom>100%</output><button type="button" class="s" data-in aria-label="拡大">＋</button></div>
+   ${pdf?`<div class="preview-controls"><button type="button" class="s" data-prev disabled>前のページ</button><output data-page>―</output><button type="button" class="s" data-next disabled>次のページ</button></div>`:''}
+  </div><p class="preview-status purchase-warning" role="status"></p>
+  <div class="preview-scroll" tabindex="0" aria-label="書類のプレビュー"><img class="preview-image" alt="書類のプレビュー"></div>`);
+ const image=dialog.querySelector('img');
+ const scroll=dialog.querySelector('.preview-scroll');
+ const status=dialog.querySelector('[role="status"]');
+ const prev=dialog.querySelector('[data-prev]');
+ const next=dialog.querySelector('[data-next]');
+ let current=1,pages=1,zoom=100;
+ const showPage=()=>{
+  status.textContent='';
+  scroll.scrollTo(0,0);
+  image.src=pdf?`${url}?page=${current}`:url;
+  if(pdf){
+   dialog.querySelector('[data-page]').textContent=`${current} / ${pages}`;
+   prev.disabled=current===1;
+   next.disabled=current===pages;
+  }
+ };
+ const changeZoom=delta=>{
+  zoom=Math.min(300,Math.max(25,zoom+delta));
+  image.style.width=zoom+'%';
+  dialog.querySelector('[data-zoom]').textContent=zoom+'%';
+ };
+ dialog.querySelector('[data-close]').onclick=()=>dialog.close();
+ dialog.querySelector('[data-out]').onclick=()=>changeZoom(-25);
+ dialog.querySelector('[data-in]').onclick=()=>changeZoom(25);
+ image.onerror=()=>{status.textContent='書類を表示できませんでした。ログイン状態とファイルを確認してください。'};
+ if(onReady)image.addEventListener('load',()=>{if(dialog.open)onReady()},{once:true});
+ if(pdf){
+  status.textContent='読み込み中…';
+  try{
+   const info=await api('GET',url+'?info=1');
+   if(!dialog.open||!dialog.isConnected)return;
+   pages=info.pages;
+   prev.onclick=()=>{if(current>1){current--;showPage()}};
+   next.onclick=()=>{if(current<pages){current++;showPage()}};
+  }catch(e){
+   status.textContent=e.message==='auth'?'ログインしてください':e.message;
+   return;
+  }
+ }
+ showPage();
+}
+function showReplacement(id){
+ const current=CUR.a.find(x=>x.id===id);
+ const dialog=openDocDialog('',`<h2 id="doc_dialog_title">添付書類の差し替え</h2>
+  <p>現在の書類　${esc(current.original_name)}</p>
+  <label class="f">差し替えるファイル<input type="file" accept="${attachmentAccept}"></label>
+  <p class="purchase-warning" role="alert"></p>
+  <div class="acts"><button type="button" data-save>確認して差し替え</button><button class="s" type="button" data-close>キャンセル</button></div>`);
+ const save=dialog.querySelector('[data-save]');
+ const close=dialog.querySelector('[data-close]');
+ const picker=dialog.querySelector('input');
+ close.onclick=()=>dialog.close();
+ dialog.addEventListener('cancel',event=>{if(save.disabled)event.preventDefault()});
+ save.onclick=async()=>{
+  const error=dialog.querySelector('[role="alert"]');
+  error.textContent='';
+  save.disabled=close.disabled=true;
+  try{
+   const upload=await attachmentBody(picker.files[0]);
+   await api('PUT',`/api/attachments/${id}`,{...upload,version:current.version,confirmed:true});
+   dialog.close();
+   await rf();
+   toast('書類を差し替えました');
+  }catch(e){
+   if(e.message!=='auth')error.textContent=e.message;
+  }finally{
+   save.disabled=close.disabled=false;
+  }
+ };
+}
+function fileToB64(file){return new Promise((resolve,reject)=>{
+ const reader=new FileReader();
+ reader.onload=()=>resolve(String(reader.result).split(',')[1]);
+ reader.onerror=()=>reject(new Error('ファイルを読み込めません'));
+ reader.readAsDataURL(file);
+})}
+async function attachmentBody(file){
+ if(!file)throw new Error('ファイルを選んでください');
+ if(file.size>8*1024*1024)throw new Error('8MB以内のファイルを選択してください');
+ if(file.type!=='application/pdf'&&!/\.pdf$/i.test(file.name))throw new Error('PDFを選んでください');
+ return {filename:file.name,mime:'application/pdf',data:await fileToB64(file)};
+}
+function uploadAttachment(cid,button){act(async()=>{
+ button.disabled=true;
+ try{
+  const target={kind:G('attach_kind'),purchase_id:G('attach_purchase')};
+  const upload=await attachmentBody($('#attach_file').files[0]);
+  await api('POST',`/api/cases/${cid}/attachments`,{...upload,...target});
+  await rf();
+ }finally{button.disabled=false}
+ },'書類を添付しました')}
+
+function invoiceItemRow(item={}){
+ return `<tr>${itemInputs.map(([key,label,numeric])=>`<td><input aria-label="${label}" data-field="${key}" value="${esc(item[key])}" ${numeric?'inputmode="numeric"':''}></td>`).join('')}
+ <td><button type="button" class="s" onclick="this.closest('tr').remove()" aria-label="商品行を削除">削除</button></td></tr>`;
+}
+function showInvoiceFields(details,original){
+ const originalTax=original?.tax_as_printed;
+ const originalNet=original?.amount_ex_tax_as_printed;
+ const originalGross=original?.amount_tax_in;
+ $('#invoice_fields').innerHTML=`<div class="card invoice-detail"><h3>請求書の記載項目</h3>
+ ${[originalNet,originalTax,originalGross].some(value=>value!=null)?`<p class="m">読取時の原本値　税抜 ${Y(originalNet)} ／ 消費税 ${Y(originalTax)} ／ 税込 ${Y(originalGross)}</p>`:''}
+ <div class="g">${invoiceInputs.map(([key,label,options])=>fld(label,'pi_'+key,details[key],options)).join('')}</div>
+ ${fld('振込先','pi_bank_info',details.bank_info,{area:true})}
+ <h3>商品明細</h3><div class="pad"><table class="invoice-items"><thead><tr>${itemInputs.map(([,label])=>`<th scope="col">${label}</th>`).join('')}<th scope="col">操作</th></tr></thead>
+ <tbody id="pi_items">${(details.items||[]).map(invoiceItemRow).join('')}</tbody></table></div>
+ <button class="s" type="button" onclick="addInvoiceItem()">商品行を追加</button></div>`;
+}
+function addInvoiceItem(){
+ const items=$('#pi_items');
+ items.insertAdjacentHTML('beforeend',invoiceItemRow());
+ items.lastElementChild.querySelector('input').focus();
+}
+function invoiceBody(){
+ const result=Object.fromEntries(invoiceInputs.map(([key])=>[key,G('pi_'+key)]));
+ result.bank_info=G('pi_bank_info');
+ result.items=Array.from($('#pi_items').rows,row=>Object.fromEntries(
+  Array.from(row.querySelectorAll('[data-field]'),input=>[input.dataset.field,input.value])
+ )).filter(item=>Object.values(item).some(value=>value.trim()!==''));
+ return result;
+}
+function purchaseBody(){return{
+ supplier_id:G('p_sup'),amount_tax_in:G('p_amt'),invoice_date:G('p_inv'),due_date:G('p_due'),
+ paid_amount:G('p_paid'),paid_date:G('p_pd'),items_text:G('p_items'),
+}}
+function purchaseCaseLabel(caseInfo){
+ return [caseInfo.mgmt_no,caseInfo.case_no,caseInfo.name].filter(Boolean).join('　');
+}
+function showPurchaseTarget(selection){
+ const target=$('#purchase_target');
+ const save=$('#purchase_save');
+ const {mode,cases}=selection;
+ if(mode==='matched'){
+  target.innerHTML=`<p><b>対象案件</b>　${esc(purchaseCaseLabel(cases[0]))}</p>`;
+  save.disabled=false;
+  return;
+ }
+ const message={
+  ambiguous:'同じ案件番号の案件が複数あります。登録先を選んでください。',
+  unmatched:'PDFの案件番号と一致する案件がありません。登録先を選んでください。',
+  unread:'PDFから案件番号を読み取れませんでした。登録先を選んでください。',
+ }[mode];
+ target.innerHTML=`<p class="purchase-warning" role="status">${message}</p>`;
+ save.disabled=true;
+ if(!cases.length){
+  target.insertAdjacentHTML('beforeend','<p class="m">選択できる登録済み案件がありません。</p>');
+  return;
+ }
+ const options='<option value="">選択してください</option>'+cases.map(info=>
+  `<option value="${info.id}">${esc(purchaseCaseLabel(info))}</option>`).join('');
+ target.insertAdjacentHTML('beforeend',fld('登録先の案件','purchase_case','',{sel:options}));
+ $('#purchase_case').addEventListener('change',event=>{save.disabled=!event.target.value});
+}
+function readPurchasePdf(button){act(async()=>{
+ const picker=$('#purchase_pdf');
+ const file=picker.files[0];
+ purchaseError();
+ button.disabled=true;
+ try{
+  const upload=await attachmentBody(file);
+  const result=await api('POST','/api/purchase-read',upload);
+  if(!picker.isConnected||picker.files[0]!==file)return;
+  EP=null;
+  READ_PDF={file,upload,selection:result.case_selection};
+  $('#pf').hidden=false;
+  const f=result.fields;
+  const supplier=$('#p_sup');
+  const matched=Array.from(supplier.options).find(option=>option.text===f.supplier_name);
+  if(matched)supplier.value=matched.value;
+  else if(f.supplier_name){
+   supplier.value='';
+   $('#p_supplier_name').value=f.supplier_name;
+   $('#p_supplier_no').value=f.supplier_invoice_no??'';
+   $('#supplier_new').open=true;
+  }
+  for(const [id,key] of [['p_amt','amount_tax_in'],['p_inv','invoice_date'],['p_due','due_date']]){
+   if(f[key]!=null&&f[key]!=='')$('#'+id).value=f[key];
+  }
+  updatePurchasePayment();
+  showInvoiceFields({...f,items:result.items},f);
+  $('#pt').textContent='仕入請求書の入力を確認';
+  const messages=[result.message,...result.warnings];
+  if(f.supplier_name&&!matched)messages.push('読み取った仕入先「'+f.supplier_name+'」は未登録です。仕入先を新規登録するか、登録済みの候補を選択してください。');
+  $('#purchase_read_result').innerHTML=messages.map((x,i)=>`<p class="${i?'purchase-warning':'m'}">${esc(x)}</p>`).join('');
+  $('#purchase_save').textContent='この案件に仕入を登録';
+  showPurchaseTarget(result.case_selection);
+  $('#pf').scrollIntoView({block:'start'});
+ }catch(e){
+  if(e.message==='auth')throw e;
+  if(picker.isConnected&&picker.files[0]===file){
+   await startManualPurchase();
+   purchaseError('PDFの読み取りに失敗しました：'+e.message+'。手入力で保存できます。');
+  }
+ }finally{button.disabled=false}
+ })}
+function editP(pid){
+ purchaseError();
+ $('#pf').hidden=false;
+ const p=CUR.v.purchases.find(x=>x.id===pid);
+ EP=pid;
+ READ_PDF=null;
+ $('#purchase_pdf').value='';
+ $('#pt').textContent='仕入を編集';
+ $('#purchase_read_result').textContent='';
+ $('#purchase_target').replaceChildren();
+ $('#purchase_save').textContent='保存';
+ $('#purchase_save').disabled=false;
+ $('#p_sup').value=p.supplier_id;
+ $('#p_amt').value=p.amount_tax_in;
+ $('#p_inv').value=p.invoice_date||'';
+ $('#p_due').value=p.due_date||'';
+ $('#p_paid').value=p.paid_amount;
+ $('#p_pd').value=p.paid_date||'';updatePurchasePayment();
+ $('#p_items').value=p.items_text||'';
+ if(p.invoice_details)showInvoiceFields(p.invoice_details,p.invoice_original?.fields);
+ else $('#invoice_fields').replaceChildren();
+ $('#pf').scrollIntoView({block:'start'});
+}
+function saveP(cid,button){purchaseAction(async()=>{
+ const body=purchaseBody();
+ if(!body.supplier_id)throw new Error('仕入先を選択してください。未登録の場合は「仕入先を新規登録」から追加してください');
+ if(!body.amount_tax_in.trim())throw new Error('税込請求額を入力してください');
+ const manualCase=cid??$('#purchase_case')?.value;
+ if(!READ_PDF&&!EP&&!manualCase)throw new Error('登録先の案件を選んでください');
+ if($('#pi_items'))body.invoice_details=invoiceBody();
+ const draft=READ_PDF;
+ let target=null;
+ if(draft){
+  if(draft.file!==$('#purchase_pdf').files[0])throw new Error('選択したPDFを読み取ってください');
+  const {mode,cases}=draft.selection;
+  target=mode==='matched'?cases[0]:cases.find(info=>String(info.id)===$('#purchase_case')?.value);
+  if(!target)throw new Error('登録先の案件を選んでください');
+  if(!confirm(`${purchaseCaseLabel(target)} に仕入とPDFを保存します。入力内容と登録先を確認しましたか？`))return;
+ }
+ button.disabled=true;
+ try{
+  if(draft){
+   const manual=['unmatched','unread'].includes(draft.selection.mode);
+   await api('POST',`/api/cases/${target.id}/purchase-import`,
+    {...body,attachment:draft.upload,confirm_unmatched_case:manual});
+   if(button.isConnected){
+    if(target.id===cid)await rf();
+    else location.hash='#/case/'+target.id+'/purchase';
+   }
+  }else{
+   if(EP)await api('PUT','/api/purchases/'+EP,body);
+   else await api('POST',`/api/cases/${manualCase}/purchases`,body);
+   if(cid===null&&!EP)location.hash='#/case/'+manualCase+'/purchase';
+   else await rf();
+  }
+  toast('保存しました');
+ }finally{button.disabled=false}
+ })}
+
+
+function delP(pid){if(confirm('この仕入を削除しますか?'))act(async()=>{await api('DELETE','/api/purchases/'+pid);await rf()},'削除しました')}
+function saveSub(cid,s){act(async()=>{await api('PUT',`/api/cases/${cid}/subs/${s}`,{sub_id:G(`s${s}_id`),principal_tax_in:G(`s${s}_pr`),fee_rate_pct:G(`s${s}_fee`),principal_received_date:G(`s${s}_rec`),settle_date:G(`s${s}_set`),...fundingValues(s)});await rf()},'保存しました')}
+function delSub(cid,s){if(confirm('この下請けを案件から外しますか?'))act(async()=>{await api('DELETE',`/api/cases/${cid}/subs/${s}`);await rf()},'外しました')}
+function saveHaak(cid){act(async()=>{await api('PUT',`/api/cases/${cid}/haak`,{confirmed_amount_tax_in:G('h_amt'),billing_date:G('h_bd'),due_date:G('h_due'),paid_date:G('h_pd'),actual_paid_amount:G('h_actual'),items_text:G('h_items'),note:G('h_note'),confirmed_checked:$('#h_chk').checked});await rf()},'保存しました')}
+function invalidateDocumentPreview(){
+ DOC_PREVIEW_TOKEN=null;
+ $('#issue_document').disabled=true;
+ $('#principal_item_names').hidden=G('doc_type')!=='principal_invoice';
+ documentFields();
+}
+function documentFormBody(){
+ const typ=G('doc_type');
+ const body={
+  doc_type:typ,sub_id:G('doc_sub')||null,issued_date:G('doc_date'),received_date:G('doc_received'),
+  amount_tax_in:G('doc_amount'),due_date:G('doc_due'),payment_method:G('doc_method'),note:G('doc_note'),
+ };
+ if(typ==='principal_invoice')body.items_text=G('document_item_names');
+ return body;
+}
+function previewCaseDocument(cid,button){act(async()=>{
+ invalidateDocumentPreview();
+ const body=documentFormBody();
+ const snapshot=JSON.stringify(body);
+ button.disabled=true;
+ try{
+  const {token}=await api('POST',`/api/cases/${cid}/document-preview`,body);
+  if(!button.isConnected||snapshot!==JSON.stringify(documentFormBody()))return;
+  await showDocumentPreview({
+   title:'発行前・確認用',url:`/api/document-previews/${token}/preview`,closeLabel:'入力に戻る',
+   onReady:()=>{
+    if(!button.isConnected||snapshot!==JSON.stringify(documentFormBody()))return;
+    DOC_PREVIEW_TOKEN=token;
+    $('#issue_document').disabled=false;
+   },
+  });
+ }finally{button.disabled=false}
+ })}
+function createCaseDocument(cid,button){act(async()=>{
+ const token=DOC_PREVIEW_TOKEN;
+ if(!token)return;
+ if(!confirm('仮プレビューで確認した書類を正式発行しますか？'))return;
+ invalidateDocumentPreview();
+ const result=await api('POST',`/api/cases/${cid}/documents`,{preview_token:token});
+ if(button.isConnected)await rf();
+ toast('発行しました '+result.doc_no);
+ })}
+function showDocumentHistory(id){act(async()=>{
+ const history=await api('GET',`/api/documents/${id}/history`);
+ const doc=CUR.docs.find(x=>x.id===id);
+ $('#doc_extra').innerHTML=`<div class="card"><h2>発行履歴 ${esc(doc.snapshot.doc_no)}</h2>
+ ${history.map(x=>`<div class="row">第${x.revision}版　${esc(x.saved_at)}　${Y(x.amount_tax_in)}${x.sent_date?'　送付 '+esc(x.sent_date):''} <button class="s" type="button" onclick="showIssuedDocument(${x.id},true)">旧版PDFを表示</button></div>`).join('')||'<p class="m">旧版はありません。</p>'}
+ <p class="m">再発行前のPDFを自動的に履歴へ保存します。送付済みの場合は再確認が必要です。</p>
+ ${CUR.v.case.deleted_at?'':`<div class="acts"><button class="s" onclick="openDocumentEdit(${id})">編集・再発行</button></div>
+ <div class="g">${fld('送付日','doc_sent_date',doc.sent_date,{type:'date'})}<button class="s" onclick="saveDocumentSent(${id})">送付日を保存</button></div>`}</div>`;
+ $('#doc_extra').scrollIntoView({block:'nearest'});
+ })}
+function saveDocumentSent(id){
+ act(async()=>{await api('PUT',`/api/documents/${id}/sent`,{sent_date:G('doc_sent_date')});await rf();showDocumentHistory(id)},'送付日を保存しました');
+}
+function openDocumentEdit(id){
+ const doc=CUR.docs.find(x=>x.id===id), saved=doc.snapshot;
+ const field=(label,key,options)=>{
+  const template=document.createElement('template');
+  template.innerHTML=fld(label,'edit_'+key,saved[key],options);
+  template.content.querySelector('input,textarea').name=key;
+  return template.innerHTML;
+ };
+ const dialog=openDocDialog('settlement-dialog',`<header class="editor-head editor-title"><h2 id="document-edit-title">書類の編集　${esc(saved.doc_no)}</h2><button class="s" onclick="this.closest('dialog').close()">閉じる</button></header><div class="editor-body">
+ ${doc.sent_date?`<p class="purchase-warning">この版は ${esc(doc.sent_date)} に送付済みです。</p>`:''}
+ <form><div class="g">
+ ${field('発行日','issued_date',{type:'date'})}
+ ${doc.doc_type==='receipt'?field('受領日','received_date',{type:'date'})+field('受領額（円）','amount_tax_in',{num:1})+field('受領方法','payment_method'):field('支払期限','due_date',{type:'date'})+field('品名','item_name')+field('明細','items_text',{area:true})}
+ ${field('備考','note',{area:true})}
+ </div><div class="acts"><button class="s" type="button" data-draft>仮プレビュー</button><button type="submit" disabled>再発行</button></div></form></div>`);
+ dialog.setAttribute('aria-labelledby','document-edit-title');
+ const form=dialog.querySelector('form'), submit=form.querySelector('[type=submit]');
+ const route=`/api/documents/${id}`;
+ let token=null;
+ form.oninput=()=>{token=null;submit.disabled=true};
+ form.querySelector('[data-draft]').onclick=()=>act(async()=>{
+  token=null;
+  submit.disabled=true;
+  const body=Object.fromEntries(new FormData(form));
+  const draft=await api('POST',route+'/edit-preview',body);
+  if(!dialog.open||JSON.stringify(body)!==JSON.stringify(Object.fromEntries(new FormData(form))))return;
+  await showDocumentPreview({title:'再発行前・確認用',url:`/api/document-previews/${draft.token}/preview`,closeLabel:'入力に戻る',
+   onReady:()=>{token=draft.token;submit.disabled=false}});
+ });
+ form.onsubmit=event=>{
+  event.preventDefault();
+  if(!token||!confirm(doc.sent_date?'送付済み書類です。旧版を履歴に残して再発行しますか？':'旧版を履歴に残して再発行しますか？'))return;
+  act(async()=>{
+   await api('PUT',route,{preview_token:token,confirm_sent_edit:!!doc.sent_date});
+   dialog.close();
+   await rf();
+   showDocumentHistory(id);
+  },'新しい版を発行し、旧版を履歴に保存しました');
+ };
+}
+function showDeletionReasons(reasons){
+ const dialog=openDocDialog('',`<h2 id="doc_dialog_title">関連記録があるため削除できません</h2><ul>${reasons.map(reason=>`<li>${esc(reason)}</li>`).join('')}</ul><p class="m">関連記録の内容を先に確認してください。発行済みPDF・受領PDFは変更していません。</p><button type="button">閉じる</button>`);
+ dialog.querySelector('button').onclick=()=>dialog.close();
+}
+function trashCase(id){act(async()=>{
+ const check=await api('GET',`/api/cases/${id}/deletion-check`),plan=check.cancellation;
+ if(!plan?.can_cancel){showDeletionReasons(plan?.reasons||check.reasons);return;}
+ const message=`この案件を見送りとして削除ボックスへ移します。\n案件の下請け設定${plan.sub_count}件と依頼前の精算明細${plan.draft_line_count}件を解除します。`+(plan.hold_total?`\nこの案件への充当${Y(plan.hold_total)}は、充当元の精算で一時預かり（了承待ち）に切り替えます。利益のみ等の振込額は維持します。LINEで了承を得てから承諾日を登録してください。`:'')+'\n復元しても下請け設定や充当は自動復元されません。実行しますか？';
+ if(!confirm(message))return;
+ await api('POST',`/api/cases/${id}/trash`,{cancel_to_hold:true,expected_token:plan.token});
+ $('#case-editor')?.close();location.hash='#/cases';toast(plan.hold_total?'見送り処理を完了し、元金を一時預かり（了承待ち）にしました':'見送り処理を完了し、下請け設定を解除しました');
+})}
+function restore(id){act(async()=>{await api('POST',`/api/cases/${id}/restore`);location.hash='#/case/'+id},'復元しました')}
+
+async function viewTrash(){const l=await api('GET','/api/trash');
+ page('#/trash',`<h1>削除ボックス</h1><p class="m">受けなかった案件などを入れておく場所です。管理番号は完全に削除しても再利用しません。</p><section class="card"><div id="trash-rows"></div><div class="pager" id="trash-pager"></div></section>`);
+ const trashRows=items=>items.map(x=>`<div class="row"><span><b>${esc(x.mgmt_no)}</b> ${esc(x.name)}<br><span class="m">削除日時 ${esc(x.deleted_at)}</span></span><span><button class="s" onclick="restore(${x.id})">復元</button> <button class="d" onclick="purge(${x.id},'${esc(x.mgmt_no)}')">完全に削除</button></span></div>`).join('')||'<p class="m">削除ボックスは空です。</p>';
+ paginate($('#trash-rows'),$('#trash-pager'),8,trashRows,'削除ボックス')(l);
+}
+function purge(id,no){act(async()=>{const check=await api('GET',`/api/cases/${id}/deletion-check`);if(!check.can_delete){showDeletionReasons(check.reasons);return}const t=prompt(`完全に削除すると元に戻せません。確認のため管理番号「${no}」を入力してください。`);if(t===null)return;await api('POST',`/api/cases/${id}/purge`,{confirm:t});await viewTrash();toast('完全に削除しました')})}
+
+let settingsTab='company';
+async function viewSettings(){
+ const [m,migrations,pdfArchive]=await Promise.all([api('GET','/api/master'),api('GET','/api/sub-mode-migrations'),api('GET','/api/settings/pdf-archive')]);
+ const c=m.company;
+ const migrationRows=migrations.map(x=>`<div class="row">
+  <a href="#/case/${x.case_id}">${esc(x.mgmt_no)} ${esc(x.case_name)}</a>
+  <span>下請け${x.slot} ${esc(x.sub_name)} ／ ${esc(legacyTaxModes[x.tax_mode])}${x.deleted_at?' ／ 削除ボックス':''}</span></div>`).join('');
+ page('#/settings',`<h1>設定</h1><div class="card"><header class="section-head"><h2>会社情報</h2></header><div class="g">${fld('会社名・屋号','co_name',c.name)}${fld('登録番号(T+13桁)','co_no',c.invoice_no)}${fld('住所','co_addr',c.address)}${fld('振込先','co_bank',c.bank_info)}</div><div class="acts"><button onclick="saveCo()">保存</button></div></div>
+ <div class="card"><header class="section-head"><h2>下請けの登録</h2></header><h3 id="sub_t">下請けを追加</h3><div class="g">${fld('下請け名','m_name','')}${fld('登録番号','m_no','')}${fld('振込先','m_bank','')}${subDetailFields.map(([key,label])=>fld(label,'m_'+key,'')).join('')}</div><div class="acts"><button onclick="saveSubM()">保存</button></div></div>
+ <div class="card"><h2>仕入先</h2>${m.suppliers.map(s=>`<div class="row"><span>${esc(s.name)}</span><span>${esc(s.invoice_no||'登録番号未入力')}</span></div>`).join('')}<div class="g" style="margin-top:8px">${fld('仕入先を追加','sp_name','')}${fld('登録番号（任意）','sp_no','')}</div><div class="acts"><button onclick="addSup()">追加</button></div></div>
+ <div class="card"><h2>元金設定の移行対象</h2>${migrationRows||'<p class="m">移行対象はありません。</p>'}</div>
+ <div class="card"><h2>パスワード</h2><div class="g">${fld('現在のパスワード','pw_cur','',{type:'password'})}${fld('新しいパスワード(8文字以上)','pw_new','',{type:'password'})}</div><div class="acts"><button onclick="chPw()">パスワードを変更</button></div></div>
+ <div class="card"><h2>バックアップ・PDF保存先</h2><p>読込PDFは案件が分かるファイル名に整え、発行PDFは書類番号のファイル名で保存します。PDFは保存先の直下にまとめます。原本・旧版はアプリ内で保管します。</p>
+ ${fld('PDFコピー保存先（絶対パス、空欄で既定）','pdf-archive-directory',pdfArchive.directory)}
+ <p class="m" style="overflow-wrap:anywhere">有効な保存先：${esc(pdfArchive.effective_directory)}</p>
+ ${pdfArchive.environment_override?'<p class="m">環境変数 LOGIBOX_PDF_DIR が優先されています。画面の保存値を使うには環境変数を解除して再起動してください。</p>':''}
+ ${pdfArchive.error?`<p role="alert" style="overflow-wrap:anywhere">${esc(pdfArchive.error)}</p>`:''}
+ <div class="acts"><button class="s" onclick="act(savePdfArchiveSettings,'PDF保存先を保存し、コピーを再試行しました')">保存してPDFコピーを再実行</button><button class="s" onclick="downloadFile('/api/backup/full')">添付書類を含む全体バックアップ（ZIP）</button><button class="s" onclick="downloadFile('/api/backup')">DBのみバックアップ</button></div></div>`);
+ window.SUBS=m.subs;
+ ES=null;
+ addCompanyFields(c);
+ arrangeSettings();
+ simplifySettings(migrations.length);
+ if(c.seal_png){
+  const seal=document.createElement('div');
+  seal.className='company-seal';
+  seal.innerHTML='<img alt="会社の社印"><div><h3>登録済みの社印</h3><p class="m">新しく発行する請求書・領収書に反映します。</p></div>';
+  seal.querySelector('img').src='data:image/png;base64,'+c.seal_png;
+  $('#settings-panel-company').append(seal);
+ }
+ if(c.bundled_seal_available){
+  const restore=document.createElement('div');
+  restore.className='acts';
+  restore.innerHTML='<button class="s" onclick="restoreCompanySeal()">同梱の社印を復元</button><p class="m">変更前に自動バックアップします。案件・会社情報・パスワードは保持します。</p>';
+  $('#settings-panel-company').append(restore);
+ }
+}
+function arrangeSettings(){
+ const main=$('.workspace main');
+ const wrapper=document.createElement('div');
+ wrapper.className='settings-page';
+ wrapper.append(...main.children);
+ main.append(wrapper);
+ const tabs=[['company','会社情報'],['subs','下請け登録'],['suppliers','仕入先'],['migration','元金設定'],['password','パスワード'],['backup','バックアップ']];
+ const heading=wrapper.querySelector('h1');
+ heading.insertAdjacentHTML('afterend','<div class="settings-tabs" role="tablist" aria-label="設定メニュー"></div>');
+ const bar=wrapper.querySelector('.settings-tabs');
+ const cards=[...wrapper.querySelectorAll(':scope > .card')];
+ tabs.forEach(([key,label],index)=>{
+  const button=document.createElement('button');
+  button.type='button';button.id='settings-tab-'+key;button.textContent=label;
+  button.setAttribute('role','tab');button.setAttribute('aria-controls','settings-panel-'+key);
+  button.onclick=()=>selectSettingsTab(key);
+  bar.append(button);
+  cards[index].id='settings-panel-'+key;
+  cards[index].setAttribute('role','tabpanel');
+  cards[index].setAttribute('aria-labelledby',button.id);
+ });
+ bar.onkeydown=event=>{
+  const buttons=[...bar.children].filter(button=>!button.hidden),index=buttons.indexOf(event.target);
+  if(index<0||!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
+  event.preventDefault();
+  const next=event.key==='Home'?0:event.key==='End'?buttons.length-1:(index+(event.key==='ArrowLeft'?-1:1)+buttons.length)%buttons.length;
+  buttons[next].click();buttons[next].focus();
+ };
+ $('#co_bank').outerHTML=`<textarea id="co_bank" rows="3">${esc($('#co_bank').value)}</textarea>`;
+ $('#m_bank').outerHTML='<textarea id="m_bank" rows="2"></textarea>';
+ $('#m_bank').closest('.f').firstChild.textContent='以前に登録した振込先（分割入力で更新）';
+ $('#m_bank').closest('.f').hidden=true;
+ const card=cards[1], editor=document.createElement('section');
+ editor.className='sub-editor';
+ let node=$('#sub_t');
+ while(node){const next=node.nextSibling;editor.append(node);node=next}
+ card.append(editor);
+ const list=document.createElement('div');
+ list.className='sub-list';
+ const table=document.createElement('div');
+ table.className='table-scroll';
+ table.innerHTML=`<table class="data-table compact-table"><thead><tr><th>下請け名</th><th>登録番号</th><th>住所</th><th>電話番号</th><th></th></tr></thead><tbody></tbody></table>${window.SUBS.length?'':'<p class="m">登録済みの下請けはありません。</p>'}`;
+ const pager=document.createElement('div');pager.className='pager';
+ list.append(table,pager);
+ card.insertBefore(list,editor);
+ const subRows=items=>items.map(sub=>`<tr><td>${esc(sub.name)}</td><td>${esc(sub.invoice_no||'未入力')}</td><td>${esc(sub.address||'未入力')}</td><td>${esc(sub.phone||'未入力')}</td><td><button class="s" onclick="editSub(${sub.id})">会社情報を編集</button></td></tr>`).join('');
+ paginate(table.querySelector('tbody'),pager,6,subRows,'下請け登録')(window.SUBS);
+ const add=document.createElement('button');
+ add.className='s';add.textContent='下請けを追加';
+ add.onclick=()=>resetSubEditor(true);
+ card.querySelector('.section-head').append(add);
+ editor.querySelector('button').textContent='下請け情報を保存';
+ editor.querySelector('.acts').insertAdjacentHTML('beforeend','<button class="s" onclick="resetSubEditor(false)">閉じる</button>');
+ editor.hidden=true;
+ selectSettingsTab(settingsTab);
+}
+function selectSettingsTab(key){
+ settingsTab=key;
+ for(const button of document.querySelectorAll('.settings-tabs button')){
+  const selected=button.id==='settings-tab-'+key;
+  button.setAttribute('aria-selected',String(selected));button.tabIndex=selected?0:-1;
+  document.getElementById(button.getAttribute('aria-controls')).hidden=!selected;
+ }
+}
+function resetSubEditor(show){
+ ES=null;
+ $('#sub_t').textContent='下請けの会社情報を登録';
+ for(const id of ['m_name','m_no','m_bank'])document.getElementById(id).value='';
+ for(const [key] of subDetailFields)document.getElementById('m_'+key).value='';
+ showSubEditor(show);
+}
+function showSubEditor(show){
+ $('.sub-editor').hidden=!show;
+ $('.sub-list').hidden=show;
+ if(show)$('#m_name').focus();
+ else $('#settings-panel-subs .section-head button').focus();
+}
+const subDetailFields=[['postal_code','郵便番号'],['address','住所'],['phone','電話番号'],['email','メールアドレス（任意）'],['contact_name','担当者'],['bank_name','銀行名'],['bank_branch','支店名'],['account_type','口座種別'],['account_number','口座番号'],['account_holder','口座名義']];
+let ES=null;
+function addCompanyFields(company){
+ const grid=$('#co_name').closest('.g');
+ const type=company.invoice_type||'';
+ const fields=[
+  fld('請求書の種類','co_invoice_type','',{sel:'<option value="">未設定</option><option value="qualified">適格請求書（登録番号必須）</option><option value="standard">通常の請求書</option>'}),
+  fld('郵便番号','co_postal_code',company.postal_code),
+  fld('電話番号','co_phone',company.phone),
+  fld('メールアドレス（任意）','co_email',company.email,{type:'email'}),
+  fld('担当者','co_contact_name',company.contact_name),
+  fld('銀行・支店','co_bank_branch',company.bank_branch),
+  fld('口座種別・番号','co_bank_account',company.bank_account),
+  fld('口座名義','co_bank_holder',company.bank_holder)
+ ];
+ grid.insertAdjacentHTML('beforeend',fields.join(''));
+ $('#co_invoice_type').value=type;
+ for(const id of ['co_name','co_invoice_type','co_no','co_postal_code','co_addr','co_phone','co_email','co_contact_name','co_bank_branch','co_bank_account','co_bank_holder','co_bank'])grid.append(document.getElementById(id).closest('.f'));
+ const legacy=$('#co_bank').closest('.f');
+ legacy.hidden=true;
+ legacy.firstChild.textContent='以前に登録した振込先（分割入力すると置き換え）';
+}
+function saveCo(){act(async()=>{
+ const body={name:G('co_name'),invoice_no:G('co_no'),address:G('co_addr'),bank_info:G('co_bank')};
+ for(const key of ['invoice_type','postal_code','phone','email','contact_name','bank_branch','bank_account','bank_holder'])body[key]=G('co_'+key);
+ await api('PUT','/api/company',body);await viewSettings();
+},'保存しました')}
+function editSub(id){const s=window.SUBS.find(x=>x.id===id);ES=id;$('#sub_t').textContent='下請けの会社情報を編集';m_name.value=s.name;m_no.value=s.invoice_no||'';m_bank.value=s.bank_info||'';for(const [key] of subDetailFields)document.getElementById('m_'+key).value=s[key]||'';showSubEditor(true)}
+function saveSubM(){act(async()=>{const b={name:G('m_name'),invoice_no:G('m_no'),bank_info:G('m_bank')};for(const [key] of subDetailFields)b[key]=G('m_'+key);if(ES)await api('PUT','/api/subcontractors/'+ES,b);else await api('POST','/api/subcontractors',b);ES=null;await viewSettings()},'保存しました')}
+function addSup(){act(async()=>{await api('POST','/api/suppliers',{name:G('sp_name'),invoice_no:G('sp_no')});await viewSettings()},'追加しました')}
+function restoreCompanySeal(){if(!confirm('同梱されている社印を登録します。登録済みの場合は置き換わります。新しく発行・再発行する帳票に反映されます。よろしいですか？'))return;act(async()=>{await api('POST','/api/company/seal/restore',{confirmed:true});await viewSettings()},'社印を復元しました')}
+function chPw(){act(async()=>{await api('POST','/api/password',{current:G('pw_cur'),new:G('pw_new')});await boot()},'パスワードを変更しました。新しいパスワードでログインしてください')}
+boot();
+</script></body></html>
+
+
+
+
