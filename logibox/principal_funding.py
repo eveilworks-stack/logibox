@@ -68,7 +68,7 @@ def options(c, cid, sid):
     # sourcesは旧APIとの互換用。新画面は資金種別を分けた一覧を使用する。
     sources = principal_sources + [x for x in custody_sources if x['source_type'] == 'legacy_hold']
     incoming = []
-    for row in c.execute('''SELECT l.*,a.case_no,a.name,s.sub_id,s.period FROM settlement_lines l
+    for row in c.execute('''SELECT l.*,a.case_no,a.name,s.sub_id,s.period,s.status,s.paid_at FROM settlement_lines l
         JOIN settlements s ON s.id=l.settlement_id JOIN cases a ON a.id=l.case_id
         WHERE l.carry_to_case_id=? AND s.sub_id=? AND l.carry_over>0''', (cid, sid)):
         item = dict(row)

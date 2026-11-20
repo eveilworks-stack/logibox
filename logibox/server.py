@@ -15,6 +15,7 @@ import carry_management
 import principal_funding
 import principal_balance
 import funding_ledger
+import case_summary
 from auth_security import hash_pw, check_pw, data_lock
 
 BASE = os.path.dirname(os.path.abspath(__file__))
@@ -454,7 +455,7 @@ def r_dashboard(c, b, q):
 
 
 def case_progress(v):
-    if v['haak'].get('paid_date') and v['calc']['confirmed'] and (v['haak'].get('actual_paid_amount') is None or v['haak']['actual_paid_amount'] >= v['calc']['basis_amount']):
+    if case_summary.haak_paid(v['haak']):
         return '入金済'
     if v['calc']['confirmed']:
         return '請求額確定'
@@ -530,7 +531,8 @@ def r_case_get(c, b, q, cid):
         sub['principal_confirmed'] = principal_confirmed(c, sub)
         sub['carry_reserved'] = incoming_carry(c, cid, sub['sub_id'])
         sub['funding'] = principal_funding.options(c, int(cid), sub['sub_id'])
-    return view
+    view['documents'] = case_documents(c, cid)
+    return case_summary.enrich(view)
 
 
 def r_case_put(c, b, q, cid):
@@ -782,6 +784,9 @@ def r_sub_del(c, b, q, cid, slot):
 def r_haak_put(c, b, q, cid):
     c.execute('BEGIN IMMEDIATE')
     case_view(c, int(cid), True)
+    if b.get('require_actual_paid_amount') and b.get('paid_date'):
+        if not yen(b, 'actual_paid_amount', 'ハーク実入金累計額', True):
+            raise Err('入金確認日を登録する場合は、実際の入金額を入力してください')
     vals = (yen(b, 'confirmed_amount_tax_in', 'ハークから連絡された確定額'), 1 if b.get('confirmed_checked') else 0,
             dt(b, 'billing_date', '請求日'), dt(b, 'due_date', '支払期限'), dt(b, 'paid_date', '入金日'),
             txt(b, 'items_text', '品名', n=3000), txt(b, 'note', '備考', n=500))
@@ -1337,6 +1342,9 @@ def r_doc_new(c, b, q, cid, *, session):
         # 既存のAPI呼出しでも同じ発行処理を使用する。
         typ, sid, doc = prepare_new_document(c, b, cid)
         pdf = render_new_document(typ, doc)
+    if typ == 'haak_invoice' and c.execute(
+            "SELECT 1 FROM issued_documents WHERE case_id=? AND doc_type='haak_invoice'", (cid,)).fetchone():
+        raise Err('ハーク請求書は登録済みです。発行済み帳票の「編集・再発行」を使用してください。', 409)
     stored = attachments.store(DOCS, pdf, '.pdf')
     try:
         cur = c.execute(
@@ -1357,9 +1365,19 @@ def r_doc_new(c, b, q, cid, *, session):
 
 def r_docs(c,b,q,cid):
     case_view(c,int(cid))
+    return case_documents(c, cid)
+
+
+def case_documents(c, cid):
     out=[]
     for r in c.execute('SELECT * FROM issued_documents WHERE case_id=? ORDER BY id DESC',(int(cid),)):
-        d=dict(r);d['snapshot']=json.loads(d.pop('snapshot_json'));d.pop('file',None);out.append(d)
+        d=dict(r);d['snapshot']=json.loads(d.pop('snapshot_json'))
+        stored=d.pop('file',None)
+        try:
+            d['pdf_available']=bool(stored) and os.path.isfile(attachments.safe_path(DOCS,stored))
+        except ValueError:
+            d['pdf_available']=False
+        out.append(d)
     return out
 
 def issued_document(c, did):

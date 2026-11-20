@@ -38,11 +38,6 @@ function simplifyCaseEditor(){
  setupSubTabs();
  const haak=$('#h_amt').closest('.card');
  foldFields(haak,'詳細設定',['h_bd','h_items','h_note']);
- const button=document.createElement('button');
- button.textContent='ハーク請求書を作成';
- button.type='button';
- button.onclick=()=>{selectCaseTab('docs');$('#doc_type').value='haak_invoice';invalidateDocumentPreview()};
- if(!CUR.v.case.deleted_at)haak.append(button);
  const form=$('#document_form');
  if(form){
   foldFields(form,'詳細を編集',['doc_method','doc_note','document_item_names']);
@@ -53,6 +48,7 @@ function simplifyCaseEditor(){
   list.innerHTML='<h2>受領書類</h2>'+CUR.a.map(file=>attachmentRow(file,true)).join('');
   $('#panel-docs').append(list);
  }
+ setupCaseSummaries();
 }
 function setupBasicSummary(card){
  const heading=card.querySelector('h2');heading.textContent='基本情報';
@@ -351,4 +347,130 @@ function setupSubTabs(){
 function selectSubSlot(slot){
  subSelection.set(CUR.v.case.id,slot);
  for(const n of [1,2]){const active=n===slot;document.getElementById('sub-panel-'+n).hidden=!active;const button=document.getElementById('sub-tab-'+n);button.setAttribute('aria-selected',String(active));button.tabIndex=active?0:-1;}
+}
+/* Saved records are the default view. Inputs are revealed only by explicit actions. */
+function progressBadge(progress){
+ return `<span class="case-status ${progress.complete?'done':'pending'}">${esc(progress.label)}</span>`;
+}
+function savedSummary(rows){
+ return `<dl class="company-summary">${rows.map(([label,value])=>`<div><dt>${esc(label)}</dt><dd>${esc(value??'未登録')}</dd></div>`).join('')}</dl>`;
+}
+function summaryEditor(card,id,html,label='編集'){
+ const heading=card.querySelector('h2');
+ const editor=document.createElement('div');editor.id=id;editor.hidden=true;
+ editor.append(...[...card.children].filter(x=>x!==heading));
+ const summary=document.createElement('div');summary.className='saved-summary';summary.innerHTML=html;
+ card.append(summary,editor);card.classList.add('saved-record');
+ if(CUR.v.case.deleted_at)return;
+ const edit=document.createElement('button');edit.type='button';edit.className='s';edit.textContent=label;
+ edit.setAttribute('aria-controls',id);edit.setAttribute('aria-expanded','false');
+ edit.onclick=()=>{summary.hidden=true;editor.hidden=false;edit.hidden=true;edit.setAttribute('aria-expanded','true');editor.querySelector('input,select,textarea')?.focus()};
+ const cancel=document.createElement('button');cancel.type='button';cancel.className='s';cancel.textContent='キャンセル';
+ cancel.onclick=()=>act(()=>rf());
+ const actions=editor.querySelector(':scope > .acts')||editor;actions.append(cancel);
+ card.append(edit);
+}
+function subSavedSummary(sub){
+ const recorded=date=>!!date&&/^\d{4}-\d{2}-\d{2}$/.test(date)&&date<=new Date().toLocaleDateString('sv-SE');
+ const d=sub.funding,p=sub.progress;
+ const sources=[...d.incoming.map(x=>({name:`${x.case_no||'案件番号未登録'} ${x.name}`,amount:x.carry_over,
+  date:x.paid_at,valid:x.status==='paid'&&recorded(x.paid_at),consent:`${x.consent_date||'未登録'} ${x.consent_method||''} ${x.consent_record||''}`})),
+ ...d.ledger_incoming.map(x=>({name:`${x.kind==='hold'?'一時預かり金：':''}${x.case_no||'案件番号未登録'} ${x.name}`,amount:x.amount,
+  date:x.event_date,valid:recorded(x.event_date),consent:`${x.consent_date||'未登録'} ${x.consent_method||''} ${x.consent_record||''}`}))];
+ const cash=d.cash_history.map(x=>`<p>${esc(x.received_on||'日付未登録')} ／ ${x.method==='hand'?'現金手渡し':x.method==='bank'?'銀行振込':'方法未登録'} ／ <b>${Y(x.amount)}</b> ／ ${esc(x.note||'')}</p>`).join('');
+ const changes=d.history.map(x=>`<p>${esc(x.changed_at)} ／ ${esc(x.reason)}<br>変更前：${esc(fundingHistoryLabel(x.before))}<br>変更後：${esc(fundingHistoryLabel(x.after))}</p>`).join('');
+ const events=d.ledger_history.map(x=>`<p>${esc(x.event_date||'日付未登録')} ／ ${esc(({principal:'元金充当',hold:'預かり金充当',created:'預かり発生',refund:'返金',cancel:'取消'})[x.kind]||x.kind)} ／ ${Y(x.amount)}${x.cancelled?'（取消済み）':''} ／ ${esc(x.note||'')}</p>`).join('');
+ return `${progressBadge(p)}${savedSummary([['下請け',sub.sub_name],['担当元金',Y(sub.principal_tax_in)],['他案件・預かり金からの充当済額',Y(p.allocated)],['入金確認済額',Y(p.cash)],['確定資金合計',Y(p.confirmed)],['未充足額',Y(p.remaining)],['入金予定（未確認）',Y(p.planned)],['手数料率',sub.fee_rate_pct+'%'],['精算予定日',sub.settle_date||sub.settle_date_auto||'未登録'],['下請け利益',Y(sub.sub_profit)]])}
+ <h3>充当元と入金の内訳</h3>${sources.map(x=>`<p><b>${esc(x.name)}</b> ／ ${Y(x.amount)} ／ ${x.valid?'確定日 '+esc(x.date):'充当予定・確定待ち'}<br>承諾：${esc(x.consent)}</p>`).join('')}${cash}
+ ${p.legacy_cash?`<p>旧入金記録 ${esc(sub.principal_received_date)} ／ ${Y(p.legacy_cash)}（入金方法の記録なし）</p>`:''}
+ ${!sources.length&&!cash&&!p.legacy_cash?'<p class="m">確定済みの入金・充当はありません。</p>':''}
+ ${(d.cash_plans||[]).map(x=>`<p>入金予定 ${Y(x.amount)} ／ ${x.method==='hand'?'現金手渡し':'銀行振込'} ／ ${esc(x.expected_on||'予定日未登録')} ／ ${esc(({planned:'未確認',confirmed:'入金確認済み',cancelled:'取消済み'})[x.status])}</p>`).join('')}
+ ${events||changes?`<details><summary>充当・取消・変更の履歴</summary>${events}${changes}</details>`:''}`;
+}
+function showPurchaseEditor(){
+ const editor=$('#purchase-editor');if(editor)editor.hidden=false;
+ const add=$('#purchase-add');if(add)add.hidden=true;
+}
+function openNewCaseDocument(type){
+ selectCaseTab('docs');
+ const form=$('#document_form');if(!form)return;
+ if(type)$('#doc_type').value=type;
+ form.hidden=false;$('#document-add').hidden=true;
+ invalidateDocumentPreview();
+ form.scrollIntoView({block:'nearest'});
+}
+function existingDocumentTarget(){
+ return CUR.docs.find(d=>d.doc_type===G('doc_type')&&
+  (d.doc_type==='haak_invoice'||String(d.sub_id)===G('doc_sub')));
+}
+function syncDocumentTarget(){
+ const form=$('#document_form');if(!form)return;
+ const existing=existingDocumentTarget();
+ const blocked=!!existing&&existing.doc_type!=='receipt';
+ form.querySelectorAll(':scope > .g, :scope > .acts, :scope > details, #principal_item_names').forEach(el=>{
+  // Keep the selectors available to choose a different, unissued document.
+  if(el.matches('.g'))return;
+  el.hidden=blocked;
+ });
+ const notice=$('#document-existing');
+ if(notice){notice.hidden=!blocked;notice.innerHTML=blocked?`<p>この書類は登録済みです。既存の帳票から確認・編集してください。</p>${issuedDocumentRow(existing)}`:'';}
+}
+function documentTargetAvailable(){
+ const existing=existingDocumentTarget();
+ if(existing&&existing.doc_type!=='receipt'){toast('登録済みの帳票から編集・再発行してください',true);return false;}
+ return true;
+}
+function issuedDocumentRow(d){
+ const label=({principal_invoice:'元金請求書',receipt:'領収書',haak_invoice:'ハーク請求書'})[d.doc_type];
+ return `<div class="issued-summary ${d.progress?.complete?'complete-record':'review-record'}">${progressBadge(d.progress||{label:'発行記録あり',complete:false})}<h3>${esc(label)}　${esc(d.snapshot.doc_no||'番号未登録')}</h3>
+ ${savedSummary([['発行金額',Y(d.amount_tax_in)],['発行日',d.issued_date||'未登録'],['版',`第${d.revision}版`],['送付日',d.sent_date||'未登録']])}
+ ${!d.pdf_available?'<p class="purchase-warning">保存済みPDFが見つかりません。発行記録を確認してください。</p>':''}
+ <div class="acts">${d.pdf_available?`<button class="s" type="button" onclick="showIssuedDocument(${d.id})">PDFを表示</button>`:''}<button class="s" type="button" onclick="selectCaseTab('docs');showDocumentHistory(${d.id})">履歴を確認</button>${CUR.v.case.deleted_at?'':`<button class="s" type="button" onclick="openDocumentEdit(${d.id})">編集・再発行</button>`}</div></div>`;
+}
+function setupCaseSummaries(){
+ const v=CUR.v,basic=$('#c_name').closest('.card');
+ basic.classList.add('saved-record');basic.querySelector('h2').insertAdjacentHTML('afterend',progressBadge({label:'登録済み',complete:true}));
+ const purchase=$('#purchase_section');
+ purchase.classList.add('saved-record');purchase.querySelector('h2').insertAdjacentHTML('afterend',progressBadge(v.progress.purchase));
+ purchase.querySelectorAll(':scope > .purchase-entry').forEach((entry,index)=>{
+  const p=v.purchases[index];if(!p)return;
+  entry.classList.add(p.progress.complete?'complete-record':'review-record');
+  entry.insertAdjacentHTML('afterbegin',progressBadge(p.progress));
+  entry.insertAdjacentHTML('beforeend',savedSummary([['実際の支払日',p.paid_date||'未登録'],['支払確認済額',Y(p.progress.confirmed)],['未払額',Y(p.progress.remaining)]]));
+ });
+ if(!v.case.deleted_at){
+  const editor=document.createElement('div');editor.id='purchase-editor';editor.hidden=true;
+  editor.append(purchase.querySelector('.purchase-tools'),$('#pf'));
+  const add=document.createElement('button');add.id='purchase-add';add.type='button';add.className='s';add.textContent=v.purchases.length?'別の仕入を追加':'仕入を登録';
+  add.onclick=()=>{showPurchaseEditor();$('#pf').hidden=false;};
+  const cancel=document.createElement('button');cancel.type='button';cancel.className='s';cancel.textContent='キャンセル';cancel.onclick=()=>act(()=>rf());editor.append(cancel);purchase.append(add,editor);
+ }
+ for(const sub of v.subs){
+  const card=$('#sub-panel-'+sub.slot);card.classList.add(sub.progress.complete?'complete-record':'review-record');
+  summaryEditor(card,'sub-editor-'+sub.slot,subSavedSummary(sub),'下請け情報を編集');
+ }
+ for(const slot of [1,2])if(!v.subs.some(s=>s.slot===slot)){
+  const card=$('#sub-panel-'+slot);
+  summaryEditor(card,'sub-editor-'+slot,progressBadge({label:'未登録',complete:false})+'<p class="m">この枠の下請けは未登録です。</p>','下請けを登録');
+ }
+ const haak=$('#h_amt').closest('.card'),h=v.haak,hp=v.haak_progress;
+ const invoice=CUR.docs.filter(d=>d.doc_type==='haak_invoice');
+ haak.classList.add(hp.complete?'complete-record':'review-record');
+ summaryEditor(haak,'haak-editor',`${progressBadge(hp)}${savedSummary([['確定請求額',h.confirmed_amount_tax_in==null?'未登録':Y(h.confirmed_amount_tax_in)],['確定額の確認',h.confirmed_checked?'確認済み':'未確認'],['請求日',h.billing_date||'未登録'],['支払期限',h.due_date||'未登録'],['入金確認日',h.paid_date||'未登録'],['入金確認済額',Y(hp.received)+(hp.implicit_full&&hp.complete?'（全額入金として登録済み）':'')],['未入金額',Y(hp.remaining)],['内容',h.items_text||'未登録'],['備考',h.note||'未登録']])}${hp.invoice_mismatch?'<p class="purchase-warning">現在の確定額と発行済み請求書の金額が異なります。帳票を確認してください。</p>':''}${invoice.map(issuedDocumentRow).join('')}${!invoice.length?'<p class="m">ハーク請求書は未発行です。</p>':''}`,'請求・入金情報を編集');
+ if(!invoice.length&&!v.case.deleted_at){
+  const issue=document.createElement('button');issue.type='button';issue.className='s';issue.textContent='ハーク請求書を作成';issue.onclick=()=>openNewCaseDocument('haak_invoice');haak.append(issue);
+ }
+ const form=$('#document_form'),docsCard=$('#doc_extra').closest('.card');
+ docsCard.classList.add('saved-record');docsCard.querySelector('h2').textContent='発行済みの請求書・領収書';
+ docsCard.querySelector(':scope > .m').textContent='保存されている帳票を表示しています。訂正は各帳票の「編集・再発行」から行えます。';
+ const list=document.createElement('div');list.id='issued-documents';list.innerHTML=CUR.docs.map(issuedDocumentRow).join('')||'<p class="m">発行済みの帳票はありません。</p>';
+ docsCard.querySelectorAll(':scope > .row').forEach(el=>el.remove());docsCard.querySelector(':scope > .m').after(list);
+ if(form){
+  form.hidden=true;
+  const existing=document.createElement('div');existing.id='document-existing';existing.hidden=true;form.prepend(existing);
+  const add=document.createElement('button');add.id='document-add';add.type='button';add.className='s';add.textContent='未発行の帳票を作成';add.onclick=()=>openNewCaseDocument();
+  form.before(add);
+  const cancel=document.createElement('button');cancel.type='button';cancel.className='s';cancel.textContent='閉じる';cancel.onclick=()=>{form.hidden=true;add.hidden=false;invalidateDocumentPreview()};form.append(cancel);
+  const type=$('#doc_type');if(invoice.length){type.querySelector('option[value=haak_invoice]').disabled=true;}
+ }
 }
