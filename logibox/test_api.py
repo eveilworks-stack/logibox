@@ -1,6 +1,8 @@
 import json, os, subprocess, sys, tempfile, time, urllib.request, urllib.error
 tmp = tempfile.mkdtemp()
 env = dict(os.environ, APP_DATA=tmp)
+# Explicitly create a synthetic fixture; the update-only server refuses missing databases.
+subprocess.run([sys.executable, '-c', 'import server; server.init()'], env=env, check=True)
 p = subprocess.Popen([sys.executable, 'server.py', '--port', '8799', '--no-browser'], env=env, stdout=subprocess.DEVNULL)
 time.sleep(1.5)
 cookie = ''

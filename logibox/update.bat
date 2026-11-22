@@ -1,0 +1,16 @@
+@echo off
+setlocal
+cd /d "%~dp0"
+set "PYTHON=py"
+py -c "import sys; sys.exit(sys.version_info < (3,10))" >nul 2>nul
+if not errorlevel 1 goto run
+set "PYTHON=python"
+python -c "import sys; sys.exit(sys.version_info < (3,10))" >nul 2>nul
+if errorlevel 1 goto error
+:run
+%PYTHON% update.py --interactive
+if errorlevel 1 pause
+goto :eof
+:error
+echo Python 3.10+ is required.
+pause

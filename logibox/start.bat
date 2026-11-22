@@ -13,7 +13,7 @@ if not errorlevel 1 goto start
 %PYTHON% -m pip install -r requirements.txt
 if errorlevel 1 goto error
 :start
-%PYTHON% server.py
+%PYTHON% launcher.py
 if errorlevel 1 goto error
 goto :eof
 :error

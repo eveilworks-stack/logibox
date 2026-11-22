@@ -44,6 +44,24 @@ class SettlementRequestTests(unittest.TestCase):
         return self.call('r_settlement_request', dict(invoice_description='商品販売委託業務',
                          request_contact='山田太郎', request_honorific='様', invoice_tax_rate=10, **kwargs), s['id'])
 
+    def test_067_edited_request_text_survives_reopen_and_requested_snapshot(self):
+        s, _, _ = self.prepare(2000000)
+        s = self.configure(s)
+        text = '編集済みの請求依頼文\n金額と充当を確認しました。'
+        amounts = (s['total'], s['amount_ex_tax'], s['tax_amount'])
+        s = self.call('r_settlement_request_text', dict(text=text, basis=s['request_text_basis'],
+                     expected_revision=s['request_text_revision']), s['id'])
+        with closing(self.s.db()) as reopened:
+            saved = self.s.settlement_view(reopened, s['id'])
+            self.assertEqual(saved['request_text'], text)
+            self.assertEqual((saved['total'], saved['amount_ex_tax'], saved['tax_amount']), amounts)
+        s = self.call('r_settlement_status', {'status': 'requested'}, s['id'])
+        self.assertEqual(s['request_text'], text)
+        self.assertEqual(s['request_document']['edited_request_text']['text'], text)
+        with self.assertRaises(self.s.Err):
+            self.call('r_settlement_request_text', dict(text='変更', basis=s['request_text_basis'],
+                      expected_revision=s['request_text_revision']), s['id'])
+
     def test_full_principal_carry_is_profit_only_in_text_pdf_and_csv(self):
         s, source, target = self.prepare(2000000)
         s = self.configure(s)

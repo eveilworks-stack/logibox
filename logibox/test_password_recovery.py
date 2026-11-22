@@ -82,6 +82,7 @@ class RecoveryTests(unittest.TestCase):
             self.assertNotIn(b'new-password', metadata)
             self.assertNotIn(b'old-password', metadata)
 
+    @unittest.skipIf(os.name != 'nt', 'Windows管理者トークンのテストはWindows専用')
     def test_non_administrator_denied_before_any_write(self):
         with patch.object(recovery.ctypes.windll.shell32, 'IsUserAnAdmin', return_value=0):
             with self.assertRaises(PermissionError):

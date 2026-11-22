@@ -215,6 +215,18 @@ h3{font-size:17px}
 .pager output{font-size:13px;color:var(--mut);font-variant-numeric:tabular-nums}
 .compact-table th,.compact-table td{padding:7px 10px}
 .compact-table td:first-child{overflow-wrap:anywhere}
+.compact-table .case-rate-row td{padding-top:4px;padding-bottom:9px}
+.case-rates{display:flex;align-items:center;gap:8px 14px;font-size:13px;flex-wrap:wrap;min-width:250px;font-variant-numeric:tabular-nums}
+.case-rates span{white-space:nowrap}.case-rates strong{color:var(--ink)}
+.case-rate-arrow{color:var(--mut)}
+@media(min-width:721px){
+ .compact-table .case-schedule td{border-bottom:0;padding-bottom:4px}
+ .compact-table .case-schedule td[rowspan]{border-bottom:1px solid var(--line);vertical-align:middle}
+ .case-rates-table{min-width:850px}
+ .case-rates-table th:first-child{min-width:180px}
+ .case-rates-table .case-schedule td:nth-child(2){white-space:nowrap}
+}
+@media(max-width:720px){.case-rate-row{display:none}}
 .case-list .card{padding:14px 16px}
 .case-list .filter-bar{margin-bottom:8px}
 .case-list .list-trash{margin:0}
@@ -304,10 +316,32 @@ h3{font-size:17px}
 #case-editor .acts{flex-wrap:wrap}
 #case-editor .editor-title > button{flex-shrink:0;white-space:nowrap}
 #case-editor .company-summary dd{overflow-wrap:anywhere;white-space:pre-wrap}
+
+/* Deep navy / blue-grey theme */
+:root{--bg:#e8eef3;--card:#fcfdfe;--ink:#182b3a;--mut:#506476;--line:#ccd7e0;--acc:#28618c;--navy:#101e2b}
+body,#app.workspace,.workspace main{background:#e8eef3;color:var(--ink)}
+.workspace aside{background:linear-gradient(165deg,#0c1722,#142737 60%,#0f1e2b);box-shadow:4px 0 28px #0e233318}
+.workspace nav a{background:linear-gradient(110deg,#192e40,#152a3b);border-color:#304b60;color:#e0eaf2;box-shadow:none}
+.workspace nav a:hover{background:#253f53;border-color:#4f718b}
+.workspace nav a.on{background:linear-gradient(110deg,#326e9a,#275b82);border-color:#5a91b8;box-shadow:0 5px 16px #06152335;color:#fff}
+.workspace .brand small,.workspace .version{color:#a9bfd0}.workspace .logout,.workspace .mobile-nav{border-color:#466176;color:#e2edf5;background:#192d3d}
+.card,.settings-page .card,.exports-page .card{background:var(--card);border-color:var(--line);box-shadow:0 3px 14px #1a354b08}
+dialog,#case-editor,.settlement-dialog,.doc-dialog{background:#e8eef3;color:var(--ink);border-color:#c7d3de}
+dialog::backdrop,#case-editor::backdrop,.doc-dialog::backdrop{background:#0c1c2ca8;backdrop-filter:blur(3px)}
+.editor-head{background:#f0f5f8;border-color:var(--line)}.editor-body{background:#e8eef3}
+.editor-tabs button,.sub-tabs button{background:#f8fbfd;color:#35546b;border-color:#cbd8e3}
+.editor-tabs [aria-selected=true],.sub-tabs button[aria-selected=true],.settings-tabs button[aria-selected=true]{background:#d8e7f2;border-color:#9bb9cf;color:#234f70}
+.case-info-strip,.sub-slot .sub-input-summary,.funding-summary>div{background:#e0eaf2;border-color:#bdcfdd}
+.dash-metric,.dash-metric+.dash-metric,.dash-progress>div,.purchase-tools,.invoice-detail,.data-table th,.funding-preview{background:#eaf1f6}
+input,select,textarea{background:#fcfdfe;border-color:#bfceda;color:var(--ink)}
+input:focus-visible,select:focus-visible,textarea:focus-visible,button:focus-visible,a:focus-visible{outline:3px solid #8ab2ce;outline-offset:2px}
+button.s,.doc-tool{background:#f8fbfd;color:var(--acc);border-color:#acc3d5}
+.auth-screen{background:linear-gradient(125deg,#102131,#2d485e)}.auth-card{background:#f8fbfd}.auth-card input{background:#e5eef5}.auth-card button{background:var(--acc);border-color:var(--acc)}
+
 </style></head><body>
 <div id="app"></div><div id="toast"></div>
-<script src="/workflow.js"></script>
-<script src="/funding.js"></script>
+<script src="/workflow.js?v=__APP_BUILD__"></script>
+<script src="/funding.js?v=__APP_BUILD__"></script>
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -353,11 +387,16 @@ const menu = [
 function nav(on){
  if(['#/purchases','#/principal','#/haak','#/profit','#/trash'].includes(on))on='#/cases';
  if(on==='#/deadlines')on='#/';
- return `<aside><a class="brand" href="#/" aria-label="TOMOS ホーム"><img src="/static/logibox.svg" alt=""><span>TOMOS</span><small>Business Management</small></a><button class="mobile-nav" aria-controls="navigation" aria-expanded="false" onclick="this.setAttribute('aria-expanded',this.parentElement.classList.toggle('expanded'))">メニュー</button><nav id="navigation" aria-label="業務メニュー">${menu.filter(x=>["#/","#/cases","#/monthly","#/exports","#/settings"].includes(x[0])).map(([href,label,path])=>`<a href="${href}" aria-label="${label}" ${on===href?'class="on" aria-current="page"':''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="${path}"/></svg>${label}</a>`).join('')}<span class="version">ver.0.6.6</span></nav><button class="logout" onclick="logout()">ログアウト</button></aside>`;
+ return `<aside><a class="brand" href="#/" aria-label="TOMOS ホーム"><img src="/static/logibox.svg" alt=""><span>TOMOS</span><small>Business Management</small></a><button class="mobile-nav" aria-controls="navigation" aria-expanded="false" onclick="this.setAttribute('aria-expanded',this.parentElement.classList.toggle('expanded'))">メニュー</button><nav id="navigation" aria-label="業務メニュー">${menu.filter(x=>["#/","#/cases","#/monthly","#/exports","#/settings"].includes(x[0])).map(([href,label,path])=>`<a href="${href}" aria-label="${label}" ${on===href?'class="on" aria-current="page"':''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="${path}"/></svg>${label}</a>`).join('')}<span class="version">ver.__APP_VERSION__</span></nav><button class="logout" onclick="logout()">ログアウト</button></aside>`;
 }
 function page(on,html){$('#app').className='workspace';$('#app').innerHTML=nav(on)+`<main>${html}</main>`}
-async function boot(){const s=await fetch('/api/state').then(r=>r.json());
- if(!s.logged){$('#app').className='auth-screen';$('#app').innerHTML=`<main class="auth-card"><div class="auth-brand">TOMOS<span>.</span></div><h1>${s.setup?'おかえりなさい。':'はじめまして。'}</h1><p class="auth-intro">${s.setup?'パスワードを入力して業務をはじめましょう。':'8文字以上のパスワードを設定して業務をはじめましょう。'}</p><form onsubmit="event.preventDefault();login(${s.setup})"><label class="f" for="pw">パスワード<input id="pw" type="password" autocomplete="${s.setup?'current-password':'new-password'}" required ${s.setup?'':'minlength="8"'}></label><button type="submit">${s.setup?'ログイン':'設定して始める'}</button></form><details class="recovery-help"><summary>パスワードを忘れた場合</summary><p>Windowsの管理者に依頼してください。PCを再起動してLOGIBOXを開く前に、アプリのフォルダにある「パスワード再設定.vbs」を開きます。管理者確認とバックアップ後に再設定できます。詳しくは同梱の「パスワード復旧手順.txt」を参照してください。</p></details></main>`;return}
+async function boot(){
+ const runtime=await fetch('/api/runtime',{cache:'no-store'}).then(r=>r.json());
+ if(runtime.version!=='__RELEASE_VERSION__'||runtime.build!=='__APP_BUILD__'){
+  $('#app').textContent='アプリが更新されました。LOGIBOXを終了し、この版の起動アイコンから開き直してください。';return;
+ }
+ const s=await fetch('/api/state',{cache:'no-store'}).then(r=>r.json());
+ if(!s.logged){$('#app').className='auth-screen';$('#app').innerHTML=`<main class="auth-card"><div class="auth-brand">TOMOS<span>.</span></div><p>LOGIBOX ver.__APP_VERSION__</p><h1>${s.setup?'おかえりなさい。':'はじめまして。'}</h1><p class="auth-intro">${s.setup?'パスワードを入力して業務をはじめましょう。':'8文字以上のパスワードを設定して業務をはじめましょう。'}</p><form onsubmit="event.preventDefault();login(${s.setup})"><label class="f" for="pw">パスワード<input id="pw" type="password" autocomplete="${s.setup?'current-password':'new-password'}" required ${s.setup?'':'minlength="8"'}></label><button type="submit">${s.setup?'ログイン':'設定して始める'}</button></form><details class="recovery-help"><summary>パスワードを忘れた場合</summary><p>Windowsの管理者に依頼してください。PCを再起動してLOGIBOXを開く前に、アプリのフォルダにある「パスワード再設定.vbs」を開きます。管理者確認とバックアップ後に再設定できます。詳しくは同梱の「パスワード復旧手順.txt」を参照してください。</p></details></main>`;return}
  route()}
 function login(setup){act(async()=>{await api('POST',setup?'/api/login':'/api/setup',{password:G('pw')});boot()})}
 function logout(){act(async()=>{await api('POST','/api/logout');boot()})}
@@ -428,6 +467,10 @@ async function viewDash(){
  paginate($('#dash-partners'),$('#partner-pager'),4,partnerRows,'下請け元金')(d.principals||[]);
 }
 
+const caseListMobile=window.matchMedia('(max-width:720px)');
+caseListMobile.addEventListener('change',()=>{
+ document.querySelectorAll('.case-schedule td[rowspan]').forEach(td=>td.rowSpan=caseListMobile.matches?1:2);
+});
 async function viewCases(view='#/cases'){
  const [l,master]=await Promise.all([api('GET','/api/cases'),api('GET','/api/master')]);
  EP=null;
@@ -445,9 +488,15 @@ async function viewCases(view='#/cases'){
  ${view==='#/cases'?'<div class="acts case-actions"><button onclick="newCaseForm(true)">LINE文章から登録</button><button class="s" onclick="newCaseForm(false)">手入力で登録</button><a class="list-trash" href="#/trash">削除ボックス</a></div><div id="nf"></div>':''}
  ${['#/cases','#/purchases'].includes(view)?purchasePdfTool()+purchaseForm(master.suppliers,null):''}
  <section class="card"><div class="filter-bar"><input id="case-search" type="search" aria-label="案件を検索" placeholder="管理番号・案件番号・案件名"><select id="case-filter" aria-label="進捗で絞り込む"><option value="">すべての進捗</option><option value="登録">登録</option><option value="仕入済">仕入済</option><option value="請求額確定">請求額確定</option><option value="入金済">入金済</option></select></div>
- <div class="table-scroll"><table class="data-table compact-table"><thead><tr><th>案件</th><th>納期</th><th>進捗</th>${columns.map(([name])=>`<th>${name}</th>`).join('')}</tr></thead><tbody id="case-rows"></tbody></table></div>
+ <div class="table-scroll"><table class="data-table compact-table${view==='#/cases'?' case-rates-table':''}"><thead><tr><th>案件</th><th>納期</th><th>進捗</th>${columns.map(([name])=>`<th>${name}</th>`).join('')}</tr></thead><tbody id="case-rows"></tbody></table></div>
  <p id="no-cases" class="m" role="status" hidden>該当する案件はありません。</p><div class="pager" id="case-pager"></div></section></div>`);
- const renderRows=items=>items.map(x=>`<tr><td><a href="#/case/${x.id}${tab}">${esc(x.mgmt_no)} ${esc(x.name)}</a>${x.case_no?`<br><span class="m">${esc(x.case_no)}</span>`:''}</td><td>${esc(x.due_date||'―')}</td><td><span class="t ${x.confirmed?'g':'w'}">${esc(x.progress)}</span>${view==='#/profit'&&!x.confirmed?'<br><span class="m">見込</span>':''}</td>${columns.map(([,render])=>`<td class="amount">${render(x)}</td>`).join('')}</tr>`).join('');
+ const renderRows=items=>items.map(x=>{
+  const withRates=view==='#/cases', span=withRates?` rowspan="${caseListMobile.matches?1:2}"`:'';
+  const rate=value=>esc(Number(value).toLocaleString('ja-JP',{maximumFractionDigits:2}))+'％';
+  const planned=x.planned_rate_pct==null?'未登録':rate(x.planned_rate_pct);
+  const actual=!x.confirmed?'未確定':x.purchase_total>0?rate(x.total_profit/x.purchase_total*100):'未計算';
+  return `<tr${withRates?' class="case-schedule"':''}><td${span}><a href="#/case/${x.id}${tab}">${esc(x.mgmt_no)} ${esc(x.name)}</a>${x.case_no?`<br><span class="m">${esc(x.case_no)}</span>`:''}</td><td>${esc(x.due_date||'―')}</td><td><span class="t ${x.confirmed?'g':'w'}">${esc(x.progress)}</span>${view==='#/profit'&&!x.confirmed?'<br><span class="m">見込</span>':''}</td>${columns.map(([,render])=>`<td${span} class="amount">${render(x)}</td>`).join('')}</tr>${withRates?`<tr class="case-rate-row"><td colspan="2"><div class="case-rates" title="確定利益率＝（確定請求額−仕入額）÷仕入額×100（小数第2位まで表示）"><span>予定利益 <strong>${planned}</strong></span><span class="case-rate-arrow" aria-hidden="true">→</span><span>確定利益 <strong>${actual}</strong></span></div></td></tr>`:''}`;
+ }).join('');
  const showCases=paginate($('#case-rows'),$('#case-pager'),8,renderRows,'案件一覧');
  const normalize=value=>value.normalize('NFKC').toLowerCase();
  const searchable=cases.map(item=>({item,text:normalize([item.mgmt_no,item.case_no,item.name].filter(Boolean).join(' '))}));

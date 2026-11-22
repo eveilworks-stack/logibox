@@ -16,7 +16,7 @@ import zipfile
 from auth_security import data_lock, hash_pw
 
 ROOT = Path(__file__).resolve().parent
-VERSION = '0.6.2'
+from app_version import VERSION
 
 
 def require_administrator():

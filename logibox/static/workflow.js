@@ -140,14 +140,15 @@ function createSettlement(sub_id){
 function openSettlement(id){
  const s=monthly.settlements.find(x=>x.id===id);
  const draft=s.status==='not_requested';
- const upload=['requested','received','mismatch'].includes(s.status);
+ const request=['not_requested','requested','mismatch'].includes(s.status);
+ const upload=['requested','mismatch'].includes(s.status);
  const pay=s.status==='received'||(s.status==='requested'&&s.total===0);
  const dialog=openDocDialog('settlement-dialog',`
  <header class="editor-head editor-title"><div><h2 id="settlement-title">${esc(s.sub_name)}　${esc(s.period)}の精算</h2><span class="t">${monthly.states[s.status]}</span></div><button class="s" type="button" onclick="this.closest('dialog').close()">閉じる</button></header>
  <div class="editor-body">
  <p>支払期限 <b>${esc(s.pay_date)}</b>　振込額 <b class="amount">${Y(s.total)}</b></p>
  ${s.request_needs_revision?'<p class="purchase-warning" role="alert">充当内容が依頼時点から変更されています。送付済み文面・発行済みPDFは変更していません。下請けへ訂正内容を連絡し、受領請求書の金額・明細も確認してください。</p>':''}
- <p class="m">依頼前 → 依頼済み → 請求書受領済 → 支払済み。文面・ひな形の生成だけでは依頼済みになりません。実際に送付した後で「依頼済みにする」を押してください。受領PDFが金額相違の場合は訂正版を登録します。</p>
+ ${request?'<p class="m">依頼前 → 依頼済み → 請求書受領済 → 支払済み。文面・ひな形の生成だけでは依頼済みになりません。実際に送付した後で「依頼済みにする」を押してください。受領PDFが金額相違の場合は訂正版を登録します。</p>':''}
  ${s.lines.map(line=>`<section class="card"><h3>${caseLink(line.case_id,line.case_no||'案件番号未登録',line.case_name,'sub')}</h3>
  ${row('元金確認済 / 担当元金',Y(line.principal_confirmed)+' / '+Y(line.principal))}
  ${line.principal_available!==line.principal_confirmed?row('同月内の連続充当を含む確認可能額',Y(line.principal_available)):''}
@@ -165,7 +166,7 @@ function openSettlement(id){
  <label class="f">変更理由<input name="change_reason" maxlength="500" value="${line.temporary_hold?'一時預かりの承諾情報を更新':''}" required placeholder="充当先案件の選択誤りを訂正、など"></label>
  </div><p class="m">充当先がなくなった場合は「一時預かり」を選び、元金を預かる金額を入力してください。全額預かりなら利益のみの振込です。了承依頼文を送付し、LINEで実際の了承を得てから承諾日を入力して保存してください。承諾方法はLINEが初期値で、承諾記録は任意です。0円で解除すると元金も返金する計算になります。支払済みの金額は変更できません。</p><div class="acts"><button class="s" type="button" onclick="previewHoldConsent(this,${s.id},${line.id})">一時預かりの了承依頼文を表示</button><button class="s">充当・一時預かりを保存</button></div><div class="hold-consent" hidden><textarea readonly rows="9" aria-label="一時預かりの了承依頼文"></textarea><button class="s" type="button" onclick="copyHoldConsent(this)">了承依頼文をコピー</button><p class="m">文面の表示・コピーでは承諾済みとして保存されません。</p></div></form></details>`:''}
  ${carryHistoryBlock(line)}</section>`).join('')}
- <section class="card"><h3>請求依頼文面・PDFひな形</h3>
+ ${request?`<section class="card"><h3>請求依頼文面・PDFひな形</h3>
  ${draft?`<form onsubmit="saveSettlementRequest(event,${s.id})"><div class="g">
  <label class="f">宛先担当者（空欄で会社宛）<input name="request_contact" maxlength="80" value="${esc(s.request_contact)}"></label>
  <label class="f">敬称<select name="request_honorific"><option ${s.request_honorific==='御中'?'selected':''}>御中</option><option ${s.request_honorific==='様'?'selected':''}>様</option></select></label>
@@ -173,12 +174,14 @@ function openSettlement(id){
  <label class="f">請求内容・業務内容<textarea name="invoice_description" maxlength="500" required>${esc(s.invoice_description)}</textarea></label>
  </div><button class="s">依頼内容を保存して文面・ひな形に反映</button><p class="m">編集後は保存してからコピー・PDF取得してください。税込の依頼合計から税額を1回だけ計算します。</p></form>`:'<p class="m">依頼時点の宛名・税率・業務内容を保持しています。</p>'}
  ${row('税抜金額',Y(s.amount_ex_tax))}${row('消費税（'+s.request_document.tax_rate+'%）',Y(s.tax_amount))}
- <textarea readonly rows="10" id="request-text">${esc(s.request_text)}</textarea>
+ ${s.request_text_stale?'<p class="purchase-warning" role="alert">精算内容が変更されています。編集した依頼文の金額・宛名・明細を、下の自動生成文と照合して保存してください。</p>':''}
+ <label class="f">請求依頼文（${draft?'本文を直接編集できます':'依頼時点の保存済み文面'}）<textarea ${draft?'maxlength="20000" oninput="this.dataset.dirty=\'1\'"':'readonly'} rows="14" id="request-text">${esc(s.request_text)}</textarea></label>
+ ${draft?`<div class="acts"><button class="s" type="button" onclick="saveSettlementRequestText(${s.id})">編集した依頼文を保存</button><button class="s" type="button" onclick="resetSettlementRequestText(${s.id})">自動生成文に戻す</button></div><p class="m">編集内容はこの精算に保存します。保存後にコピー・依頼済みへの変更を行ってください。本文の編集では計算金額やPDFひな形は変更されません。</p>${s.request_text_custom?`<details><summary>現在の精算内容から作った自動生成文を確認</summary><pre style="white-space:pre-wrap;overflow-wrap:anywhere">${esc(s.request_text_generated)}</pre></details>`:''}`:''}
  <div class="acts"><button class="s" type="button" onclick="copySettlementRequest()">文面をコピー</button>
  <button class="s" type="button" onclick="showSettlementTemplate(${s.id})">請求書PDFひな形を確認</button>
  <button class="s" type="button" onclick="downloadFile('/api/settlements/${s.id}/invoice-template')">PDFひな形を保存</button>
  ${draft?`<button onclick="changeSettlement(${s.id},'requested')">依頼済みにする</button><button class="d" onclick="deleteSettlement(${s.id})">依頼前の明細を削除</button>`:''}
- ${s.status==='requested'&&!s.invoices.length?`<button class="s" onclick="changeSettlement(${s.id},'not_requested')">依頼前に戻す</button>`:''}</div></section>
+ ${s.status==='requested'&&!s.invoices.length?`<button class="s" onclick="changeSettlement(${s.id},'not_requested')">依頼前に戻す</button>`:''}</div></section>`:''}
  ${upload?`<section class="card"><h3>下請けから受領した請求書</h3><form onsubmit="uploadSettlementInvoice(event,${s.id})">
  <div class="g"><label class="f">請求書PDF<input name="pdf" type="file" accept="application/pdf,.pdf" required></label>
  <label class="f">受領日<input name="received_date" type="date" value="${localToday()}" required></label>
@@ -243,13 +246,24 @@ function carryHistoryBlock(line){
 }
 function saveSettlementRequest(event,id){
  event.preventDefault();
+ if($('#request-text')?.dataset.dirty==='1'){toast('編集した依頼文を先に保存してください');return;}
  const values=Object.fromEntries(new FormData(event.currentTarget));
  act(async()=>{await api('PUT',`/api/settlements/${id}/request`,values);await reloadSettlement(id)},'依頼内容を保存しました');
+}
+function saveSettlementRequestText(id){
+ const s=monthly.settlements.find(x=>x.id===id),text=$('#request-text').value;
+ act(async()=>{await api('PUT',`/api/settlements/${id}/request-text`,{text,basis:s.request_text_basis,expected_revision:s.request_text_revision});await reloadSettlement(id)},'編集した依頼文を保存しました');
+}
+function resetSettlementRequestText(id){
+ if(!confirm('編集した依頼文を破棄し、現在の精算内容から自動生成した文面に戻しますか？'))return;
+ const s=monthly.settlements.find(x=>x.id===id);
+ act(async()=>{await api('PUT',`/api/settlements/${id}/request-text`,{reset:true,basis:s.request_text_basis,expected_revision:s.request_text_revision});await reloadSettlement(id)},'自動生成文に戻しました');
 }
 function showSettlementTemplate(id){
  act(()=>showDocumentPreview({title:'請求書PDFひな形（下請け本人による確認・発行用）',url:`/api/settlements/${id}/invoice-template/preview`,download:`/api/settlements/${id}/invoice-template`}));
 }
 function changeSettlement(id,status){
+ if(status==='requested'&&$('#request-text')?.dataset.dirty==='1'){toast('編集した依頼文を先に保存してください');return;}
  if(!confirm('精算の状態を変更しますか？'))return;
  const paid_at=status==='paid'?G('settlement-paid'):undefined;
  act(async()=>{await api('PUT',`/api/settlements/${id}/status`,{status,paid_at});await reloadSettlement(id)},'状態を更新しました');
@@ -270,6 +284,7 @@ function showSettlementInvoice(id){
 }
 function copySettlementRequest(){
  const field=$('#request-text');
+ if(field.dataset.dirty==='1'){toast('編集した依頼文を先に保存してください');return;}
  field.select();
  if(navigator.clipboard)act(()=>navigator.clipboard.writeText(field.value),'文面をコピーしました');
  else toast('文面を選択しました。Ctrl+Cでコピーしてください');

@@ -17,6 +17,7 @@ import principal_balance
 import funding_ledger
 import case_summary
 from auth_security import hash_pw, check_pw, data_lock
+from app_version import DISPLAY_VERSION, VERSION, SCHEMA_VERSION, runtime_identity
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 DATA = os.environ.get('APP_DATA') or os.path.join(BASE, 'data')
@@ -32,7 +33,7 @@ DOC_DRAFT_TTL = 15 * 60
 DOC_DRAFT_LIMIT = 24
 DATE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
 SUB_TAX_MODE = 'consignment'
-SCHEMA_VERSION = 12
+RUNTIME = runtime_identity()
 SUB_DETAILS = {'postal_code': ('郵便番号', 12), 'address': ('住所', 200),
                'phone': ('電話番号', 30), 'email': ('メールアドレス', 100),
                'contact_name': ('担当者', 80), 'bank_name': ('銀行名', 80),
@@ -469,7 +470,7 @@ def r_cases(c, b, q):
         cs = v['case']
         out.append(dict(id=cs['id'], mgmt_no=cs['mgmt_no'], name=cs['name'], due_date=cs['due_date'], case_no=cs['case_no'],
                         subs=len(v['subs']), purchase_total=v['calc']['purchase_total'], own_profit=v['calc']['own_profit'],
-                        confirmed=v['calc']['confirmed'], progress=case_progress(v),
+                        confirmed=v['calc']['confirmed'], progress=case_progress(v), planned_rate_pct=cs['planned_rate_pct'],
                         total_profit=v['calc']['total_profit'], sub_profit=v['calc']['sub_profit_total'],
                         haak_amount=v['haak'].get('confirmed_amount_tax_in'),
                         haak_paid=v['haak'].get('paid_date'), principal=sum(s['principal_tax_in'] for s in v['subs']),
@@ -1622,7 +1623,19 @@ def settlement_view(c, sid):
             item['id'] not in frozen or any(item.get(key) != frozen[item['id']].get(key)
                 for key in ('carry_to_case_id', 'carry_over', 'consent_date', 'consent_record', 'consent_method'))
             for item in view['lines']))
-    view['request_text'] = settlement_documents.request_text(document)
+    generated_text = settlement_documents.request_text(document)
+    view['request_text_generated'] = generated_text
+    view['request_text_basis'] = hashlib.sha256(generated_text.encode('utf-8')).hexdigest()
+    saved_text = document.get('edited_request_text')
+    if not row['request_snapshot_json']:
+        stored = getset(c, 'settlement_request_text:' + str(row['id']))
+        saved_text = json.loads(stored) if stored else None
+    view['request_text_custom'] = saved_text is not None
+    view['request_text_stale'] = bool(saved_text and saved_text['basis'] != view['request_text_basis'])
+    view['request_text'] = saved_text['text'] if saved_text else generated_text
+    view['request_text_revision'] = hashlib.sha256(json.dumps(saved_text, ensure_ascii=False, sort_keys=True).encode('utf-8')).hexdigest()
+    if saved_text:
+        document['edited_request_text'] = saved_text
     view['amount_ex_tax'], view['tax_amount'] = document['amount_ex_tax'], document['tax_amount']
     view['archive_directory'] = pdf_archive_root(c)
     return view
@@ -1641,6 +1654,24 @@ def r_settlement_request(c, b, q, settlement_id):
         raise Err('税率は8または10を指定してください')
     c.execute('''UPDATE settlements SET invoice_description=?,request_contact=?,request_honorific=?,
                  invoice_tax_rate=? WHERE id=?''', (description, contact, honorific, rate, view['id']))
+    return settlement_view(c, settlement_id)
+
+
+def r_settlement_request_text(c, b, q, settlement_id):
+    c.execute('BEGIN IMMEDIATE')
+    view = settlement_draft(c, settlement_id)
+    if b.get('expected_revision') != view['request_text_revision'] or b.get('basis') != view['request_text_basis']:
+        raise Err('依頼文または精算内容が更新されています。画面を開き直して確認してください', 409)
+    key = 'settlement_request_text:' + str(view['id'])
+    if b.get('reset') is True:
+        c.execute('DELETE FROM settings WHERE k=?', (key,))
+    else:
+        if not isinstance(b.get('text'), str):
+            raise Err('請求依頼文を入力してください')
+        text = txt(b, 'text', '請求依頼文', True, 20000)
+        if any(ord(ch) < 32 and ch not in '\r\n\t' for ch in text):
+            raise Err('請求依頼文に使用できない文字があります')
+        setset(c, key, json.dumps(dict(text=text, basis=view['request_text_basis']), ensure_ascii=False))
     return settlement_view(c, settlement_id)
 
 
@@ -1710,6 +1741,7 @@ def r_settlement_delete(c, b, q, settlement_id):
         raise Err('充当先の残額が入金済みのため、精算明細を削除できません')
     c.execute('DELETE FROM settlement_lines WHERE settlement_id=?', (settlement_id,))
     c.execute('DELETE FROM settlements WHERE id=?', (settlement_id,))
+    c.execute('DELETE FROM settings WHERE k=?', ('settlement_request_text:' + str(view['id']),))
     return dict(ok=True)
 
 
@@ -1814,6 +1846,8 @@ def r_settlement_status(c, b, q, settlement_id):
     status = b.get('status')
     today = datetime.date.today().isoformat()
     if (view['status'], status) == ('not_requested', 'requested'):
+        if view['request_text_stale']:
+            raise Err('精算内容が変わっています。編集した請求依頼文を確認・保存してから依頼済みにしてください', 409)
         if any(line['hold_consent_pending'] for line in view['lines']):
             raise Err('一時預かりの了承待ちです。LINEで了承を得てから承諾日を登録してください')
         if any(row['tax_mode'] == SUB_TAX_MODE for row in settlement_candidates(c, view['period'], view['sub_id'])):
@@ -2116,6 +2150,7 @@ ROUTES = [
     ('PUT', r'/api/settlements/(\d+)/lines/(\d+)', r_carry),
     ('PUT', r'/api/settlements/(\d+)/status', r_settlement_status),
     ('PUT', r'/api/settlements/(\d+)/request', r_settlement_request),
+    ('PUT', r'/api/settlements/(\d+)/request-text', r_settlement_request_text),
     ('GET', r'/api/settlements/(\d+)/invoice-template', r_settlement_template),
     ('GET', r'/api/settlements/(\d+)/invoice-template/preview', r_settlement_template_preview),
     ('POST', r'/api/settlements/(\d+)/invoice', r_sub_invoice),
@@ -2205,12 +2240,19 @@ class H(BaseHTTPRequestHandler):
         try:
             if self.loopback and (self.headers.get('Host') or '') not in (f'127.0.0.1:{self.port}', f'localhost:{self.port}'):
                 raise Err('許可されていないアクセスです', 403)
+            if method == 'GET' and u.path == '/api/runtime':
+                return self.js(RUNTIME)
             if method == 'GET' and u.path in ('/', '/workflow.js', '/funding.js', '/static/logibox.svg'):
                 name, mime = {'/': ('index.html', 'text/html'), '/workflow.js': ('workflow.js', 'text/javascript'),
                               '/funding.js': ('funding.js', 'text/javascript'),
                               '/static/logibox.svg': ('logibox.svg', 'image/svg+xml')}[u.path]
                 with open(os.path.join(BASE, 'static', name), 'rb') as page:
-                    return self.out(200, page.read(), mime + '; charset=utf-8')
+                    content = page.read()
+                    if name == 'index.html':
+                        content = content.replace(b'__APP_VERSION__', DISPLAY_VERSION.encode())
+                        content = content.replace(b'__RELEASE_VERSION__', VERSION.encode())
+                        content = content.replace(b'__APP_BUILD__', RUNTIME['build'].encode())
+                    return self.out(200, content, mime + '; charset=utf-8')
             if not u.path.startswith('/api/'):
                 raise Err('見つかりません', 404)
             body = {}
@@ -2300,16 +2342,22 @@ def main():
     ap.add_argument('--port', type=int, default=8766)
     ap.add_argument('--no-browser', action='store_true')
     a = ap.parse_args()
+    if os.path.isfile(os.path.join(BASE, 'UPDATE_ONLY.txt')) and not os.path.isfile(DBP):
+        raise RuntimeError('これは更新専用パッケージです。update.batで利用中フォルダを更新してください。新しいDBは作成しません。')
     with data_lock(DATA):
         run_server(a)
 
 
 def run_server(a):
-    init()
     H.loopback = a.host in ('127.0.0.1', 'localhost')
     H.port = a.port
     srv = ThreadingHTTPServer((a.host, a.port), H)
-    url = f'http://127.0.0.1:{a.port}/'
+    try:
+        init()
+    except Exception:
+        srv.server_close()
+        raise
+    url = f'http://127.0.0.1:{a.port}/?v={VERSION}&build={RUNTIME["build"]}'
     print('起動しました:', url, '(終了するときはこの画面を閉じます)')
     if not a.no_browser and H.loopback:
         threading.Timer(1, lambda: webbrowser.open(url)).start()
