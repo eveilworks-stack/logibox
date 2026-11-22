@@ -4,9 +4,9 @@ Windowsで使うTOMOS向けの案件・仕入・請求書・月次精算管理�
 
 **最新版：画面表示 ver.0.67 / 内部リリース番号 0.6.7 / DBスキーマ12**
 
-[最新版ZIPをダウンロード](https://github.com/eveilworks-stack/logibox/releases/latest/download/LOGIBOX_v067_update.zip)
+[最新版ZIPをダウンロード](https://github.com/eveilworks-stack/logibox/raw/refs/heads/main/LOGIBOX_latest_no_data.zip)
 
-[リリース一覧](https://github.com/eveilworks-stack/logibox/releases) · [更新手順](./logibox/更新手順.txt) · [原因・変更ファイル・検証結果](./logibox/修正報告.txt)
+[更新手順](./logibox/更新手順.txt) · [原因・変更ファイル・検証結果](./logibox/修正報告.txt)
 
 ## 今回の修正
 
