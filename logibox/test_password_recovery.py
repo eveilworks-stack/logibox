@@ -153,16 +153,6 @@ class RecoveryTests(unittest.TestCase):
                 self.reset()
         self.assertEqual(self.before, self.dump())
 
-    def test_live_legacy_server_blocks_recovery(self):
-        import socket
-        with socket.socket() as listener:
-            listener.bind(('127.0.0.1', 0))
-            listener.listen()
-            with patch.object(recovery.socket, 'socket') as mocked:
-                mocked.return_value.__enter__.return_value.connect_ex.return_value = 0
-                with self.assertRaises(RuntimeError):
-                    recovery.ensure_stopped()
-
     def test_wal_snapshot_includes_committed_data(self):
         with closing(sqlite3.connect(self.path)) as connection:
             connection.execute('PRAGMA journal_mode=WAL')

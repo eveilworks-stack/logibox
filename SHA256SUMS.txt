@@ -1,1 +1,1 @@
-2fd01b680b5dfe0ec78f0cbf1d8c5e08eada32b988ade7cb1c245d70958ce0a2  LOGIBOX_latest_no_data.zip
+ed9639af3a168b2b2aa1dff3307fea2a20a1a41129a6878bec53acb7f76857e6  LOGIBOX_latest_no_data.zip

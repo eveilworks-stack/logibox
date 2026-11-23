@@ -32,11 +32,21 @@ class LaunchIdentityTests(unittest.TestCase):
         with patch('urllib.request.urlopen', side_effect=error):
             with self.assertRaises(RuntimeError): launcher.ready()
 
-    def test_only_connection_refused_allows_start(self):
+    def test_connection_refused_allows_start(self):
         with patch('urllib.request.urlopen', side_effect=urllib.error.URLError(ConnectionRefusedError())):
             self.assertFalse(launcher.ready())
-        with patch('urllib.request.urlopen', side_effect=TimeoutError()):
-            with self.assertRaises(RuntimeError): launcher.ready()
+
+    def test_timeout_with_free_port_allows_start(self):
+        for error in (TimeoutError(), urllib.error.URLError(TimeoutError())):
+            with self.subTest(error=type(error)), patch('urllib.request.urlopen', side_effect=error), patch.object(launcher, 'ensure_stopped') as check:
+                self.assertFalse(launcher.ready())
+                check.assert_called_once_with()
+
+    def test_timeout_with_busy_or_uncheckable_port_blocks_start(self):
+        for error in (TimeoutError(), urllib.error.URLError(TimeoutError())):
+            with self.subTest(error=type(error)), patch('urllib.request.urlopen', side_effect=error), patch.object(launcher, 'ensure_stopped', side_effect=RuntimeError('busy')):
+                with self.assertRaises(RuntimeError):
+                    launcher.ready()
 
 
 class UpdateTests(unittest.TestCase):

@@ -11,6 +11,7 @@ import urllib.request
 import urllib.error
 from app_version import VERSION, runtime_identity
 import webbrowser
+from password_recovery import ensure_stopped
 
 ROOT = Path(__file__).resolve().parent
 URL = 'http://127.0.0.1:8766/'
@@ -25,9 +26,13 @@ def ready():
         raise RuntimeError('ポート8766で旧版または別アプリが起動中です。LOGIBOXを終了するかPCを再起動してから、このフォルダの起動.vbsを開いてください。') from error
     except urllib.error.URLError as error:
         if not isinstance(error.reason, ConnectionRefusedError):
-            raise RuntimeError('起動中アプリの確認に失敗しました。PCを再起動してから起動してください。') from error
+            # A connect timeout alone does not prove that a server is running.
+            ensure_stopped()
         return False
-    except (OSError, ValueError) as error:
+    except OSError:
+        ensure_stopped()
+        return False
+    except ValueError as error:
         raise RuntimeError('起動中アプリを確認できません。PCを再起動してから起動してください。') from error
     if not isinstance(identity, dict):
         raise RuntimeError('別アプリがポート8766を使用中です。PCを再起動してください。')
@@ -53,7 +58,7 @@ def main():
     kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
     kernel.ReleaseMutex.argtypes = [wintypes.HANDLE]
     kernel.CloseHandle.argtypes = [wintypes.HANDLE]
-    mutex = kernel.CreateMutexW(None, False, 'Local\\SeikyuAppLauncher8766')
+    mutex = kernel.CreateMutexW(None, False, r'Local\SeikyuAppLauncher8766')
     if not mutex:
         raise OSError('起動ロックを作成できませんでした。')
     acquired = False

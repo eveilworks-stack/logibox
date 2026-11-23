@@ -25,14 +25,27 @@ def require_administrator():
 
 
 def ensure_stopped():
-    # Also protects against the unpatched 0.6.0 server, which has no data lock.
-    with socket.socket() as connection:
-        connection.settimeout(.5)
-        result = connection.connect_ex(('127.0.0.1', 8766))
-        if result == 0:
-            raise RuntimeError('LOGIBOXのポート8766が使用中です。PCを再起動し、LOGIBOXを開かずに再設定してください。')
-        if result not in (errno.ECONNREFUSED, 10061):
-            raise RuntimeError('アプリの停止状態を確認できません。ネットワーク制限を管理者に確認してください。')
+    """Check port ownership locally, without a timed network connection.
+
+    Windows may take longer than a short connect timeout to refuse an unused
+    loopback port. An exclusive bind detects legacy servers too, without
+    treating that timeout as a network restriction. Never enable SO_REUSEADDR.
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+            if os.name == 'nt':
+                probe.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            probe.bind(('127.0.0.1', 8766))
+    except OSError as error:
+        code = getattr(error, 'winerror', None) or error.errno
+        if code in (errno.EADDRINUSE, 10048):
+            raise RuntimeError(
+                'LOGIBOXのポート8766が使用中です。LOGIBOXを終了するか、'
+                'PCを再起動し、LOGIBOXを開かずにもう一度実行してください。') from error
+        raise RuntimeError(
+            'ポート8766の停止確認ができませんでした。元データは変更していません。'
+            '\nLOGIBOXを終了して再実行してください。解消しない場合は、'
+            '次のエラー内容をお知らせください。\n' + str(error)) from error
 
 
 def connect_existing(path):

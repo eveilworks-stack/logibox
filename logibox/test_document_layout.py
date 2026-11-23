@@ -13,7 +13,7 @@ def example():
     Image.new('RGB', (80, 80), '#cc3333').save(seal, 'PNG')
     return dict(doc_no='HI-26-0002', issued_date='2026-11-20', due_date='2026-11-30',
                 case_due_date='2026-11-30', amount_tax_in=43621278,
-                recipient='検証下請け 御中', case_name='検証案件', mgmt_no='26-0002', case_no='SP25236',
+                recipient='検証下請け 御中', case_name='検証案件', mgmt_no='26-0002', case_no='SP91005',
                 issuer_name='株式会社 TESTS', issuer_postal_code='100-0000',
                 issuer_street_address='架空市元町1234-5-6-7', issuer_address='〒100-0000 架空市元町1234-5-6-7',
                 issuer_phone='090-0000-0000', issuer_email='sample.test@example.com',

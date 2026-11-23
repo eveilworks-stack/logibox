@@ -230,11 +230,16 @@ def _principal_grid(c):
 
 def principal_invoice(d):
     total = int(d['amount_tax_in'])
-    ex,tax=calc.tax_split(total)
-    carried=int(d.get('carried_amount') or 0); paid=int(d.get('paid_amount') or 0)
-    remaining=total-carried-paid
-    if remaining<0: raise ValueError('振替充当額と現金入金額の合計が元金を超えています')
-    items = list(_principal_item_lines(d.get('items_text')))
+    gross = int(d.get('principal',total)) if 'invoice_amount' in d else total
+    ex,tax=calc.tax_split(gross)
+    carried=int(d.get('carried_amount') or 0)
+    remaining=total if 'invoice_amount' in d else max(0,total-carried)
+    allocation_lines = []
+    for allocation in d.get('allocations',[]):
+        label = '一時預かり金' if allocation['kind']=='hold' else '前案件'
+        allocation_lines.extend(_principal_item_lines(f"{label} {allocation['case_no'] or ''} {allocation['name']} からの充当 −{allocation['amount']:,}円"))
+        allocation_lines.extend(_principal_item_lines(f"確定日 {allocation['confirmed_on']} ／ 履歴 {allocation['id']} ／ {allocation.get('record') or ''}"))
+    items = allocation_lines + list(_principal_item_lines(d.get('items_text')))
     rows_per_page = 17
 
     def draw(c):
@@ -256,12 +261,20 @@ def principal_invoice(d):
         if items:
             _draw(c, 24, 280.5, '参考', 7)
         _principal_item_rows(c, items[:rows_per_page])
-        _amount(c, 335, 632.9, carried, 8.09, width=125, unit=' 円')
-        _amount(c, 335, 649, paid, 8.09, width=125, unit=' 円')
+        c.setFillColorRGB(1,1,1)
+        c.rect(21,H-675,321,63,fill=1,stroke=0)
+        _draw(c,25,619,'担当元金と確定充当の内訳',7)
+        _draw(c,25,632.9,'本案件の担当元金',8)
+        _draw(c,25,649,'確定済み元金充当額',8)
+        _draw(c,25,665.2,'今回のお支払額',8,font=BOLD)
+        _amount(c, 335, 632.9, gross, 8.09, width=125, unit=' 円')
+        _draw(c,210,649,'−' if carried else '',8)
+        _amount(c, 335, 649, carried, 8.09, width=115, unit=' 円')
         _amount(c, 335, 665.2, remaining, 8.09, width=125, unit=' 円', font=BOLD)
+        _draw(c,365,620,'担当元金の税内訳（充当への税加算なし）',7,width=195)
         _amount(c, 560, 633.7, ex, 10.52, width=91, font=BOLD)
         _amount(c, 560, 653.9, tax, 10.52, width=91, font=BOLD)
-        _amount(c, 560, 674.1, total, 11.33, width=91, font=BOLD)
+        _amount(c, 560, 674.1, gross, 11.33, width=91, font=BOLD)
         note=d.get('note') or ''
         if d.get('mgmt_no'): note += f"  管理番号：{d['mgmt_no']} ／ 案件番号：{d.get('case_no') or '―'}"
         _paragraph(c, 87.2, 697.5, note, 472, 10.52, 20.2, 2)
@@ -286,6 +299,7 @@ def haak_invoice(d):
     total=int(d['amount_tax_in']); ex,tax=calc.tax_split(total)
     def draw(c):
         _company(c, d)
+        _draw(c, 49, 143, d.get('recipient') or '請求先', 12, width=260)
         _right(c, 550, 73, 'No. ' + (d.get('doc_no') or ''), 9, width=200)
         _right(c, 550, 87, '発行日：' + _date(d.get('issued_date')), 9, width=200)
         _amount(c, 316, 237, total, 17, width=260, prefix='¥')

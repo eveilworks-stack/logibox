@@ -24,10 +24,10 @@ def main():
  manifest=dict(version=VERSION,display_version=DISPLAY_VERSION,schema=SCHEMA_VERSION,build=build_id(),
   sha256={p.relative_to(APP).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in files})
  (APP/'SOURCE_MANIFEST.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n',encoding='utf-8')
- path=OUTPUT/'LOGIBOX_ver0.67_データ保持_起動修正版.zip'
+ path=OUTPUT/f'LOGIBOX_ver{DISPLAY_VERSION}_データ保持_元金請求書修正版.zip'
  with zipfile.ZipFile(path,'w',zipfile.ZIP_DEFLATED) as z:
   for p in sorted(files+[APP/'SOURCE_MANIFEST.json']):
-   info=zipfile.ZipInfo('LOGIBOX_ver0.67_update/logibox/'+p.relative_to(APP).as_posix(),(2026,1,1,0,0,0))
+   info=zipfile.ZipInfo(f'LOGIBOX_ver{DISPLAY_VERSION}_update/logibox/'+p.relative_to(APP).as_posix(),(2026,1,1,0,0,0))
    info.compress_type=zipfile.ZIP_DEFLATED
    z.writestr(info,p.read_bytes())
  (OUTPUT/'SHA256SUMS.txt').write_text(hashlib.sha256(path.read_bytes()).hexdigest()+'  '+path.name+'\n')

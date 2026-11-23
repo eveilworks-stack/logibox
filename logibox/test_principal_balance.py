@@ -16,7 +16,7 @@ class PrincipalBalanceTests(unittest.TestCase):
     invoice = test_workflow.WorkflowTests.invoice
 
     def source(self, amount=2000000, other=False):
-        return self.case('香水・オードトワレ',self.old,amount,'2020-10-01',other=other)
+        return self.case('検証用商品A・商品B',self.old,amount,'2020-10-01',other=other)
 
     def haak(self,cid,paid=None,checked=True,date=True):
         return self.call('r_haak_put',dict(confirmed_amount_tax_in=3000000,confirmed_checked=checked,
@@ -97,8 +97,8 @@ class PrincipalBalanceTests(unittest.TestCase):
 
     def test_dashboard_conserves_transfers_and_email_only_when_applicable(self):
         a=self.source();t=self.case('先',self.new,2000000)
-        self.c.execute('UPDATE cases SET case_no=? WHERE id=?',('SP23648',a))
-        self.c.execute('UPDATE cases SET case_no=? WHERE id=?',('SP24000',t));self.c.commit()
+        self.c.execute('UPDATE cases SET case_no=? WHERE id=?',('SP91001',a))
+        self.c.execute('UPDATE cases SET case_no=? WHERE id=?',('SP91003',t));self.c.commit()
         self.haak(a);self.transfer(a,t,500000)
         dash=self.call('r_dashboard')['principals'][0]
         self.assertEqual((dash['principal'],dash['available']),(2000000,1500000))
@@ -106,8 +106,8 @@ class PrincipalBalanceTests(unittest.TestCase):
         view=self.s.settlement_view(self.c,settlement)
         d=view['request_document'];d['period']=self.today[:7];d['carry_details']=view['lines']
         text=self.s.settlement_documents.request_text(d)
-        self.assertIn('SP23648 香水・オードトワレ',text)
-        self.assertIn('SP24000 先',text)
+        self.assertIn('SP91001 検証用商品A・商品B',text)
+        self.assertIn('SP91003 先',text)
         self.assertIn('充当日 '+self.today,text)
         d['carry_details']=[]
         self.assertNotIn('元金充当明細（',self.s.settlement_documents.request_text(d))

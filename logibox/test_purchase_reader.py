@@ -12,7 +12,7 @@ from purchase_reader import read_pdf
 def synthetic_invoice(supplier='エムロジ', carry_over=False, missing_gross=False, case_no=None):
     """取引先の実データを配布せず、両社の列配置と文字の格納順を再現する。"""
     is_logi = supplier == 'エムロジ'
-    case_no = case_no or ('SP25375' if is_logi else 'SP23648')
+    case_no = case_no or ('SP91006' if is_logi else 'SP91001')
     net, tax = (13660272, 1366027) if is_logi else (31834536, 3183454)
     gross = net + tax + (999 if carry_over else 0)
     with fitz.open() as doc:
@@ -76,7 +76,7 @@ class PurchaseReaderTests(unittest.TestCase):
         is_logi = supplier == 'エムロジ'
         expected = {
             'supplier_name': supplier,
-            'case_no': 'SP25375' if is_logi else 'SP23648',
+            'case_no': 'SP91006' if is_logi else 'SP91001',
             'invoice_number': 'ML70116409' if is_logi else None,
             'invoice_date': '2026-11-09' if is_logi else '2026-10-08',
             'due_date': '2026-11-10' if is_logi else '2026-10-09',
@@ -130,10 +130,10 @@ class PurchaseReaderTests(unittest.TestCase):
         self.verify_invoice(Path(supplied).read_bytes(), supplier, real=True)
 
     def test_emest_real_pdf(self):
-        self.verify_real_pdf('エムエスト', 'PHASE2_EMEST_PDF', '*20261009*SP23648*.pdf')
+        self.verify_real_pdf('エムエスト', 'PHASE2_EMEST_PDF', '*20261009*SP91001*.pdf')
 
     def test_emlogi_real_pdf(self):
-        self.verify_real_pdf('エムロジ', 'PHASE2_EMLOGI_PDF', '2026年11月10日*SP25375*.pdf')
+        self.verify_real_pdf('エムロジ', 'PHASE2_EMLOGI_PDF', '2026年11月10日*SP91006*.pdf')
 
 
 if __name__ == '__main__':

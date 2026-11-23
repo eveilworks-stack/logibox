@@ -14,7 +14,7 @@ from line_case_reader import parse_line_notice
 
 
 NOTICE = """案件のご案内です。
-案件番号：SP25375
+案件番号：SP91006
 案件名：化粧品スポット
 開始日：2026年11月10日
 納期：2026/12/01
@@ -23,25 +23,25 @@ NOTICE = """案件のご案内です。
 税込仕入限度額：15026299円
 """
 EXPECTED = {
-    'case_no': 'SP25375', 'name': '化粧品スポット',
+    'case_no': 'SP91006', 'name': '化粧品スポット',
     'start_date': '2026-11-10', 'due_date': '2026-12-01',
     'planned_rate_pct': 7.5, 'maker': 'サンプル株式会社',
     'purchase_limit_tax_in': 15026299,
 }
 
 
-LINE_REPORT = """●案件番号：SP23648
-案件名：スポット 香水・オードトワレ
-メーカー：ブルガリ／クロエ／ジルスチュアート／フェルナンダ／ランバン／フィアンセ／SHIRO
+LINE_REPORT = """●案件番号：SP91001
+案件名：検証用商品A・商品B
+メーカー：サンプルA／サンプルB／サンプルC
 開始日：2026年10月8日
 納期：2026年10月21日（14日間）
 利益：7%
 税込仕入限度額：222,772,704円"""
 LINE_REPORT_EXPECTED = {
-    'case_no': 'SP23648', 'name': 'スポット 香水・オードトワレ',
+    'case_no': 'SP91001', 'name': '検証用商品A・商品B',
     'start_date': '2026-10-08', 'due_date': '2026-10-21',
     'planned_rate_pct': 7,
-    'maker': 'ブルガリ／クロエ／ジルスチュアート／フェルナンダ／ランバン／フィアンセ／SHIRO',
+    'maker': 'サンプルA／サンプルB／サンプルC',
     'purchase_limit_tax_in': 222772704,
 }
 
@@ -89,7 +89,7 @@ class LineCaseReaderTests(unittest.TestCase):
 ・メーカー名 サンプル株式会社
 • 補足のメッセージ
 案件名称 化粧品スポット
-予定利益率（％）＝７．５　 案件Ｎｏ．：SP25375
+予定利益率（％）＝７．５　 案件Ｎｏ．：SP91006
 開始予定日 2026.11.10
 仕入限度額（税込）：15026299 円
 """
@@ -181,7 +181,7 @@ class LineCaseApiTests(unittest.TestCase):
         stored = self.api('GET', case_path)[1]['case']
         self.assertEqual({key: stored[key] for key in fields}, fields)
 
-        alternate = NOTICE.replace('SP25375', 'ＳＰ２５３７５')
+        alternate = NOTICE.replace('SP91006', 'ＳＰ９１００６')
         preview = self.api('POST', path, {'text': alternate})[1]
         self.assertIn(saved['mgmt_no'], preview['duplicate'])
         status, error, _ = self.api('POST', '/api/cases', preview['fields'])
@@ -189,7 +189,7 @@ class LineCaseApiTests(unittest.TestCase):
         self.assertEqual(error['error'], preview['duplicate'])
         self.assertEqual(self.api('PUT', case_path, fields)[0], 200)
 
-        other = {**fields, 'case_no': 'SP99999'}
+        other = {**fields, 'case_no': 'SP91012'}
         other_id = self.api('POST', '/api/cases', other)[1]['id']
         self.assertEqual(self.api('PUT', f'/api/cases/{other_id}', fields)[0], 409)
         self.assertEqual(self.api('POST', case_path + '/trash')[0], 200)

@@ -148,7 +148,7 @@ class WorkflowTests(unittest.TestCase):
 
     def test_sub_details_preserve_fee_and_legacy_bank(self):
         self.call('r_subm_put', {'name':'既存下請け', 'bank_info':'以前の口座', 'default_fee_rate_pct':3}, self.sid)
-        body = dict(name='変更後', address='鳥栖市', phone='09012345678', postal_code='8410052',
+        body = dict(name='変更後', address='架空市', phone='09012345678', postal_code='1000000',
                     email='test@example.com', contact_name='担当者', bank_info='以前の口座')
         self.call('r_subm_put', body, self.sid)
         saved = dict(self.c.execute('SELECT * FROM subcontractors WHERE id=?', (self.sid,)).fetchone())
@@ -164,7 +164,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertEqual(self.c.execute("SELECT default_fee_rate_pct FROM subcontractors WHERE name='新規'").fetchone()[0], 2)
 
     def test_company_details_and_document_context(self):
-        body = dict(name='検証会社', address='鳥栖市元町', invoice_no='T1234567890123',
+        body = dict(name='検証会社', address='架空市見本町', invoice_no='T1234567890123',
                     bank_info='以前の銀行', postal_code='841-0052', phone='09012345678',
                     email='test@example.com', contact_name='担当者', invoice_type='qualified',
                     bank_branch='検証銀行 本店', bank_account='普通 1234567', bank_holder='テスト')

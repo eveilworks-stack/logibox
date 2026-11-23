@@ -1,4 +1,4 @@
-"""0.6.5: dashboard/selection parity, SP25236 coverage, planned cash and legacy custody."""
+"""0.6.5: dashboard/selection parity, SP91005 coverage, planned cash and legacy custody."""
 from contextlib import closing
 import sqlite3
 import unittest
@@ -16,9 +16,9 @@ class FundingRegistrationTests(unittest.TestCase):
     def setup_sp(self):
         source=self.case('回収確認済み元案件','2020-11',2000000,'2020-10-01')
         target=self.case('ブラックフライデー案件','2020-10',3000000)
-        self.c.execute("UPDATE subcontractors SET name='Eveil works' WHERE id=?",(self.sid,))
-        self.c.execute("UPDATE cases SET case_no='SP23648',due_date='2999-12-31' WHERE id=?",(source,))
-        self.c.execute("UPDATE cases SET case_no='SP25236' WHERE id=?",(target,));self.c.commit()
+        self.c.execute("UPDATE subcontractors SET name='検証下請けA' WHERE id=?",(self.sid,))
+        self.c.execute("UPDATE cases SET case_no='SP91001',due_date='2999-12-31' WHERE id=?",(source,))
+        self.c.execute("UPDATE cases SET case_no='SP91005' WHERE id=?",(target,));self.c.commit()
         self.call('r_haak_put',dict(confirmed_amount_tax_in=2500000,confirmed_checked=True,paid_date=self.today),source)
         return source,target
 
@@ -29,9 +29,9 @@ class FundingRegistrationTests(unittest.TestCase):
     def test_sp25236_2m_then_planned_1m_then_bank_confirm_and_restart(self):
         source,target=self.setup_sp()
         opts=self.options(target)
-        dash=next(x for x in self.call('r_dashboard')['principals'] if x['name']=='Eveil works')
+        dash=next(x for x in self.call('r_dashboard')['principals'] if x['name']=='検証下請けA')
         self.assertEqual((dash['available'],opts['pool_available'],opts['available']),(2000000,2000000,2000000))
-        self.assertEqual(opts['principal_sources'][0]['case_no'],'SP23648')
+        self.assertEqual(opts['principal_sources'][0]['case_no'],'SP91001')
         before=self.call('r_case_get',None,target)['calc']
         self.save_sp(target,[self.entry(source,2000000)],self.cash_entry(1000000,confirmed=False))
         data=self.options(target)
@@ -47,8 +47,8 @@ class FundingRegistrationTests(unittest.TestCase):
             self.s.init_schema(reopened)
             data=self.s.principal_funding.options(reopened,target,self.sid)
             self.assertEqual((data['cash_received'],data['confirmed_total']),(1000000,3000000))
-            self.assertEqual(data['ledger_incoming'][0]['case_no'],'SP23648')
-            self.assertEqual(data['ledger_incoming'][0]['target_case_no'],'SP25236')
+            self.assertEqual(data['ledger_incoming'][0]['case_no'],'SP91001')
+            self.assertEqual(data['ledger_incoming'][0]['target_case_no'],'SP91005')
             self.assertEqual(reopened.execute('PRAGMA integrity_check').fetchone()[0],'ok')
             self.assertFalse(reopened.execute('PRAGMA foreign_key_check').fetchall())
 
@@ -113,10 +113,10 @@ class FundingRegistrationTests(unittest.TestCase):
         a,b,t=self.setup_cases();self.save(t,[self.entry(a,30000)])
         self.c.execute("UPDATE cases SET case_no='RENAMED',name='変更後' WHERE id=?",(a,));self.c.commit()
         history=ledger.history(self.c)
-        self.assertEqual(history[0]['case_no'],'SP23648')
+        self.assertEqual(history[0]['case_no'],'SP91001')
         view=self.draft(self.old);doc=view['request_document'];doc['funding_events']=history
         text=self.s.settlement_documents.request_text(doc)
-        self.assertIn('SP23648 スポット 香水・オードトワレ',text)
+        self.assertIn('SP91001 検証用商品A・商品B',text)
         self.assertIn('30,000円',text)
 
     def test_existing_allocation_does_not_exclude_source_remainder(self):

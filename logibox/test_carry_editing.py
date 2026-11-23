@@ -25,9 +25,9 @@ class CarryEditingTests(unittest.TestCase):
     invoice = test_workflow.WorkflowTests.invoice
 
     def prepare(self, same_month=True):
-        source = self.case('スポット 香水・オードトワレ', self.old, 2000000, '2020-11-09')
+        source = self.case('検証用商品A・商品B', self.old, 2000000, '2020-11-09')
         wrong = self.case('ディワリ案件', self.new, 2000000)
-        correct = self.case('医薬品差し替え案件', self.old if same_month else self.new, 2000000)
+        correct = self.case('検証用差し替え案件', self.old if same_month else self.new, 2000000)
         self.c.execute('UPDATE cases SET due_date=? WHERE id=?',
                        (self.old+'-29' if same_month else self.new+'-29', correct))
         self.c.commit()

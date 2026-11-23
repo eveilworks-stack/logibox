@@ -40,7 +40,7 @@ class CaseSummaryTests(unittest.TestCase):
         self.assertTrue(p['complete'])
         self.assertEqual((p['allocated'],p['cash'],p['remaining']),(2000000,1000000,0))
         self.assertEqual(sub['funding']['cash_history'][0]['method'],'hand')
-        self.assertEqual(sub['funding']['ledger_incoming'][0]['case_no'],'SP23648')
+        self.assertEqual(sub['funding']['ledger_incoming'][0]['case_no'],'SP91001')
         with closing(self.s.db()) as conn:
             self.assertEqual(self.s.r_case_get(conn,{}, {},str(target))['subs'][0]['progress'],p)
         self.assertEqual(self.c.execute('SELECT count(*) FROM funding_events').fetchone()[0],before)

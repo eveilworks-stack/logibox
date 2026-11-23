@@ -12,10 +12,10 @@ class PrincipalFundingTests(unittest.TestCase):
     draft = test_workflow.WorkflowTests.draft
 
     def setup_cases(self):
-        a = self.case('スポット 香水・オードトワレ',self.old,100000,'2020-11-01')
+        a = self.case('検証用商品A・商品B',self.old,100000,'2020-11-01')
         b = self.case('第2充当元',self.old,80000,'2020-11-01')
-        target = self.case('医薬品差し替え案件 プチプラスキンケア・UV',self.new,200000)
-        for cid,no in ((a,'SP23648'),(b,'SP23649'),(target,'SP24392')):
+        target = self.case('検証用差し替え案件 プチプラスキンケア・UV',self.new,200000)
+        for cid,no in ((a,'SP91001'),(b,'SP91002'),(target,'SP91004')):
             self.c.execute('UPDATE cases SET case_no=? WHERE id=?',(no,cid))
         self.c.commit()
         for cid in (a,b):
@@ -122,8 +122,8 @@ class PrincipalFundingTests(unittest.TestCase):
         view=self.s.settlement_view(self.c,line['settlement_id'])
         document=view['request_document'];document['period']=self.today[:7];document['carry_details']=view['lines']
         text=docs.request_text(document)
-        self.assertIn('SP23648 スポット 香水・オードトワレ',text)
-        self.assertIn('SP24392 医薬品差し替え案件',text)
+        self.assertIn('SP91001 検証用商品A・商品B',text)
+        self.assertIn('SP91004 検証用差し替え案件',text)
         self.assertIn('承諾方法 LINE',text)
         self.assertNotRegex(text,r'\d{2}-\d{4}')
         section=text.split('元金充当明細（')[1]

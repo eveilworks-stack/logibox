@@ -747,7 +747,11 @@ def r_sub_put(c, b, q, cid, slot):
 def r_funding_options(c, b, q, cid):
     case_view(c, int(cid), True)
     sid = yen({'sub_id': q.get('sub_id', [''])[0]}, 'sub_id', '下請け', True)
-    return principal_funding.options(c, int(cid), sid)
+    result = principal_funding.options(c, int(cid), sid)
+    cutoff = dt({'date': q.get('issued_date', [None])[0]}, 'date', '発行日')
+    if result['invoice'] is not None:
+        result['invoice'] = funding_ledger.invoice_values(c,int(cid),sid,cutoff)
+    return result
 
 
 def r_principal_release(c, b, q, cid, slot):
@@ -1228,7 +1232,7 @@ def document_context(c,case_id,doc_type,sub_id=None):
         h=view['haak']
         if h.get('confirmed_amount_tax_in') is None or not h.get('confirmed_checked'):
             raise Err('ハーク確定額と「確認済み」を登録してから請求書を発行してください')
-        result.update(recipient='株式会社 Haak（ハーク）',haak_amount=h['confirmed_amount_tax_in'],
+        result.update(recipient='請求先',haak_amount=h['confirmed_amount_tax_in'],
                       billing_date=h.get('billing_date'),due_date=h.get('due_date'),items_text=h.get('items_text'),note=h.get('note'))
     return result
 
@@ -1239,7 +1243,12 @@ def document_payload(c, b, case_id, doc_type, sub_id=None, existing=None):
     today=datetime.date.today().isoformat()
     issued_date=dt(b,'issued_date','発行日') or today
     if doc_type=='principal_invoice':
-        amount=base['principal']
+        funding = (json.loads(existing['snapshot_json']) if existing and not b.get('recalculate_principal')
+                   else funding_ledger.invoice_values(c,int(case_id),int(sub_id),issued_date))
+        if 'invoice_amount' not in funding:  # 旧版の帳票も金額を維持して編集可能
+            funding = dict(funding, invoice_amount=existing['amount_tax_in'], allocated_principal=funding.get('carried_amount',0), allocated_hold=0)
+        amount = funding['invoice_amount']
+        base.update(funding)
     elif doc_type=='haak_invoice':
         amount=base['haak_amount']
     else:
@@ -1249,8 +1258,9 @@ def document_payload(c, b, case_id, doc_type, sub_id=None, existing=None):
     if existing and b.get('amount_tax_in') is None and doc_type=='receipt': amount=existing['amount_tax_in']
     carry=yen(b,'carried_amount','振替充当済額') or 0
     paid=yen(b,'paid_amount','現金入金済額') or 0
-    if doc_type=='principal_invoice' and carry+paid>amount:
-        raise Err('振替充当済額と現金入金済額が元金を超えています')
+    if doc_type=='principal_invoice':
+        carry = base['allocated_principal'] + base['allocated_hold']
+        paid = 0  # 実入金は請求額計算に含めない
     if doc_type == 'principal_invoice':
         items = txt(b, 'items_text', '参考商品明細', n=200000) if 'items_text' in b else base['items_text']
     else:
@@ -1346,6 +1356,11 @@ def r_doc_new(c, b, q, cid, *, session):
     if typ == 'haak_invoice' and c.execute(
             "SELECT 1 FROM issued_documents WHERE case_id=? AND doc_type='haak_invoice'", (cid,)).fetchone():
         raise Err('ハーク請求書は登録済みです。発行済み帳票の「編集・再発行」を使用してください。', 409)
+    if typ == 'principal_invoice':
+        if c.execute("SELECT 1 FROM issued_documents WHERE case_id=? AND sub_id=? AND doc_type='principal_invoice'",(int(cid),sid)).fetchone():
+            raise Err('発行済みの元金請求書があります。未入金・一部入金の残高を確認し、必要な場合は履歴・編集から訂正・再発行してください。二重発行はできません。',409)
+        if not doc['amount_tax_in']:
+            raise Err('今回の請求額は0円です。充当済みのため請求書を発行できません。',409)
     stored = attachments.store(DOCS, pdf, '.pdf')
     try:
         cur = c.execute(
@@ -1378,6 +1393,10 @@ def case_documents(c, cid):
             d['pdf_available']=bool(stored) and os.path.isfile(attachments.safe_path(DOCS,stored))
         except ValueError:
             d['pdf_available']=False
+        if d['doc_type']=='principal_invoice':
+            received = funding_ledger.received_cash(c,int(cid),d['sub_id'])
+            d['cash_received'] = received
+            d['unpaid_amount'] = max(0,d['amount_tax_in']-received)
         out.append(d)
     return out
 
@@ -1391,6 +1410,10 @@ def edited_document(c, r, b):
     prev=json.loads(r['snapshot_json'])
     merged=dict(prev);merged.update(b)
     doc=document_payload(c,merged,r['case_id'],r['doc_type'],r['sub_id'],existing=r)
+    if r['doc_type']=='principal_invoice' and not b.get('recalculate_principal'):
+        for key in ('principal','amount_tax_in','allocated_principal','allocated_hold','allocations','invoice_amount','excess','allocation_as_of','carried_amount','paid_amount'):
+            if key in prev: doc[key]=prev[key]
+        doc['issued_date']=prev['issued_date']
     doc['doc_no']=prev['doc_no']
     return doc
 

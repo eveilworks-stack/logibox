@@ -181,11 +181,11 @@ class FundingLedgerTests(unittest.TestCase):
         document=view['request_document'];document['period']=self.today[:7]
         document['funding_events']=ledger.period_events(self.c,self.sid,self.today[:7])
         text=self.s.settlement_documents.request_text(document)
-        for word in ('SP23648','SP24392','一時預かり発生','一時預かり金充当','一時預かり金返金','返金銀行控え'):
+        for word in ('SP91001','SP91004','一時預かり発生','一時預かり金充当','一時預かり金返金','返金銀行控え'):
             self.assertIn(word,text)
         rows=list(csv.DictReader(io.StringIO(self.call('r_export',None,'funding')[1].decode('utf-8-sig'))))
         self.assertEqual(len([x for x in rows if not x['区分'].startswith('旧')]),4)
-        self.assertEqual(rows[1]['充当先案件番号'],'SP24392')
+        self.assertEqual(rows[1]['充当先案件番号'],'SP91004')
         self.assertEqual(self.call('r_case_get',None,t)['calc'],before)
 
     def test_concurrent_allocations_recheck_source_balance(self):
@@ -254,9 +254,9 @@ class FundingLedgerTests(unittest.TestCase):
         self.assertEqual(int(rows[0]['下請け精算支払']),10000)
         view=self.draft(self.old)
         rows=list(csv.DictReader(io.StringIO(self.call('r_export',None,'settlements')[1].decode('utf-8-sig'))))
-        row=next(x for x in rows if x['案件番号']=='SP23649')
+        row=next(x for x in rows if x['案件番号']=='SP91002')
         self.assertEqual(int(row['充当額']),30000)
-        self.assertIn('SP24392',row['分割充当先・金額・確定日'])
+        self.assertIn('SP91004',row['分割充当先・金額・確定日'])
         self.assertIn(self.today,row['分割充当先・金額・確定日'])
 
 

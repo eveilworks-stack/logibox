@@ -212,7 +212,7 @@ class PurchaseApiTests(unittest.TestCase):
         self.assertEqual(pdf_preview[2], base64.b64decode(scanned['data']))
 
     def test_both_sub_slots_fixed_and_legacy_values_are_reported(self):
-        case = self.create_case('SP99100')
+        case = self.create_case('SP91011')
         for name in ('移行検証１', '移行検証２'):
             self.api('POST', '/api/subcontractors', {'name': name})
         subs = [s['id'] for s in self.api('GET', '/api/master')['subs'] if s['name'].startswith('移行検証')]
@@ -292,8 +292,8 @@ class PurchaseApiTests(unittest.TestCase):
         self.assertEqual(self.api('GET', case + '/attachments')[0]['purchase_id'], pid)
 
     def test_import_is_confirmed_atomic_and_keeps_original_tax(self):
-        case = self.create_case('SP89001')
-        original_file = upload(synthetic_invoice('エムエスト', case_no='SP89001'))
+        case = self.create_case('SP91008')
+        original_file = upload(synthetic_invoice('エムエスト', case_no='SP91008'))
         result = self.api('POST', case + '/purchase-read', original_file)
         self.assertEqual(result['fields']['tax_as_printed'], 3183454)
         self.assertEqual(self.api('GET', case)['purchases'], [])
@@ -303,7 +303,7 @@ class PurchaseApiTests(unittest.TestCase):
             invoice_details={**result['fields'], 'items': result['items'], 'tax_as_printed': 3183455},
             attachment=original_file,
         )
-        wrong = self.create_case('SP99999')
+        wrong = self.create_case('SP91012')
         self.api('POST', wrong + '/purchase-import', body, expected=409)
         self.assertEqual(self.api('GET', wrong)['purchases'], [])
         saved = self.api('POST', case + '/purchase-import', body)
@@ -323,8 +323,8 @@ class PurchaseApiTests(unittest.TestCase):
         self.assertEqual(purchase['invoice_details']['tax_as_printed'], 3183456)
 
     def test_find_active_case_by_pdf_number_and_block_other_destination(self):
-        match = self.create_case('ＳＰ２５３７５')
-        other = self.create_case('SP90001')
+        match = self.create_case('ＳＰ９１００６')
+        other = self.create_case('SP91009')
         raw_pdf = synthetic_invoice()
         pdf = upload(raw_pdf)
         self.api('POST', '/api/purchase-read', pdf, expected=401, auth=False)
@@ -345,10 +345,10 @@ class PurchaseApiTests(unittest.TestCase):
         self.assertEqual(self.api('GET', other + '/attachments'), [])
 
     def test_unmatched_requires_explicit_choice_and_does_not_create_case(self):
-        case = self.create_case('SP90002')
-        source_case = self.create_case('SP80001')
+        case = self.create_case('SP91010')
+        source_case = self.create_case('SP91007')
         self.api('POST', source_case + '/trash')
-        pdf = upload(synthetic_invoice('エムエスト', carry_over=True, case_no='SP80001'))
+        pdf = upload(synthetic_invoice('エムエスト', carry_over=True, case_no='SP91007'))
         before = self.api('GET', '/api/cases')
         result = self.api('POST', '/api/purchase-read', pdf)
         self.assertEqual(result['case_selection']['mode'], 'unmatched')
@@ -361,7 +361,7 @@ class PurchaseApiTests(unittest.TestCase):
         self.assertEqual(self.api('GET', case)['purchases'], [])
         self.api('POST', case + '/purchase-import', {**body, 'confirm_unmatched_case': True})
         saved = self.api('GET', case)['purchases'][0]
-        self.assertEqual(saved['invoice_original']['fields']['case_no'], 'SP80001')
+        self.assertEqual(saved['invoice_original']['fields']['case_no'], 'SP91007')
         self.assertEqual(saved['invoice_original']['fields']['tax_as_printed'], 3183454)
         self.assertEqual({row['id'] for row in self.api('GET', '/api/cases')}, {row['id'] for row in before})
 
@@ -384,7 +384,7 @@ class PurchaseApiTests(unittest.TestCase):
         return token, url, pdf
 
     def test_principal_items_from_sp23648_and_legacy_notes(self):
-        case = self.create_case('SP23648')
+        case = self.create_case('SP91001')
         sid = self.set_document_context(case)
         fixture = os.environ.get('PHASE2_EMEST_PDF')
         raw = Path(fixture).read_bytes() if fixture else synthetic_invoice('エムエスト')

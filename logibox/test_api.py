@@ -29,11 +29,11 @@ try:
     assert api('GET', '/api/cases')[0] == 401
     assert api('POST', '/api/login', {'password': 'wrong'})[0] == 401
     assert api('POST', '/api/login', {'password': 'password123'})[0] == 200
-    s, r = api('POST', '/api/cases', {'name': 'スポット 香水・オードトワレ', 'planned_rate_pct': 7, 'due_date': '2026-10-31'})
+    s, r = api('POST', '/api/cases', {'name': '検証用商品A・商品B', 'planned_rate_pct': 7, 'due_date': '2026-10-31'})
     assert r['mgmt_no'].endswith('-0001'), r
     cid = r['id']
     assert api('POST', '/api/cases', {'name': '', 'planned_rate_pct': 7})[0] == 400
-    api('POST', '/api/subcontractors', {'name': 'Eveil Works'})
+    api('POST', '/api/subcontractors', {'name': '検証下請けA'})
     assert api('POST', f'/api/cases/{cid}/purchases', {'supplier_id': 1, 'amount_tax_in': '35,017,990'})[0] == 200
     assert api('PUT', f'/api/cases/{cid}/subs/1', {'sub_id': 1, 'principal_tax_in': 2000000})[0] == 200
     assert api('PUT', f'/api/cases/{cid}/subs/2', {'sub_id': 1, 'principal_tax_in': 1})[0] == 400
