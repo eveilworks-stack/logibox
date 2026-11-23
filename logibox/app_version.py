@@ -3,8 +3,8 @@ import hashlib
 import os
 from pathlib import Path
 
-VERSION = '0.6.7'
-DISPLAY_VERSION = '0.67'
+VERSION = '0.6.8'
+DISPLAY_VERSION = '0.68'
 SCHEMA_VERSION = 12
 ROOT = Path(__file__).resolve().parent
 
