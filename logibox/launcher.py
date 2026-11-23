@@ -53,7 +53,7 @@ def main():
     kernel.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
     kernel.ReleaseMutex.argtypes = [wintypes.HANDLE]
     kernel.CloseHandle.argtypes = [wintypes.HANDLE]
-    mutex = kernel.CreateMutexW(None, False, 'Local\\SeikyuAppLauncher8766')
+    mutex = kernel.CreateMutexW(None, False, r'Local\SeikyuAppLauncher8766')
     if not mutex:
         raise OSError('起動ロックを作成できませんでした。')
     acquired = False

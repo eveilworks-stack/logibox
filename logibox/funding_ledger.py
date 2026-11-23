@@ -429,3 +429,51 @@ def claim(c,b):
         c.execute('INSERT INTO funding_requests(token,created_at) VALUES(?,?)',(token,datetime.datetime.now(datetime.timezone.utc).isoformat()))
     except sqlite3.IntegrityError as exc:
         raise runtime().Err('この入力は保存済みです。画面を再表示してください',409) from exc
+
+
+def confirmed_allocations(c, cid, sid, cutoff):
+    """元金管理と帳票で共用。実入金・精算支払とは別の確定充当明細。"""
+    rows = []
+    if cutoff < today():
+        for change in c.execute('SELECT before_json FROM carry_change_history WHERE sub_id=? AND substr(changed_at,1,10)>?',(sid,cutoff)):
+            before = json.loads(change['before_json'])
+            confirmed = before.get('carry_confirmed_date') or before.get('consent_date')
+            if (before.get('carry_to_case_id') == int(cid) and before.get('carry_over') and
+                    confirmed and confirmed <= cutoff):
+                raise runtime().Err('発行日後に変更・取消された充当履歴があります。発行日と訂正内容を確認してください',409)
+    for event in active(c, 'e.target_id=? AND e.sub_id=?', (cid, sid), cutoff):
+        source = c.execute('SELECT case_no,name FROM cases WHERE id=?', (event['source_case_id'],)).fetchone()
+        label = c.execute('SELECT * FROM funding_event_labels WHERE event_id=?', (event['id'],)).fetchone()
+        rows.append(dict(kind=event['kind'], id=event['id'], amount=event['amount'],
+                         case_no=label['source_case_no'] if label else source['case_no'],
+                         name=label['source_name'] if label else source['name'],
+                         confirmed_on=event['event_date'], fund_id=event['fund_id'],
+                         record=event['consent_record']))
+    # 旧方式は承諾と確定日を持つ保存済み充当のみ。精算の支払待ちは入金と混同しない。
+    for row in c.execute("""SELECT l.*,a.case_no,a.name FROM settlement_lines l
+            JOIN settlements s ON s.id=l.settlement_id JOIN cases a ON a.id=l.case_id
+            WHERE l.carry_to_case_id=? AND s.sub_id=? AND l.carry_over>0
+            AND l.consent_date<=? AND COALESCE(l.carry_confirmed_date,l.consent_date)<=?
+            AND COALESCE(l.consent_record,'')<>'' """, (cid,sid,cutoff,cutoff)):
+        # 可変の旧明細を過去日に再構成できない場合は、後日の内容を混入させず停止する。
+        changed = c.execute('SELECT MAX(changed_at) FROM carry_change_history WHERE line_id=?', (row['id'],)).fetchone()[0]
+        if cutoff < today() and changed and changed[:10] > cutoff:
+            raise runtime().Err('発行日後に変更された充当履歴があります。発行日と訂正内容を確認してください',409)
+        rows.append(dict(kind='principal', id='legacy-'+str(row['id']), amount=row['carry_over'],
+                         case_no=row['case_no'], name=row['name'],
+                         confirmed_on=row['carry_confirmed_date'] or row['consent_date'],
+                         fund_id=None, record=row['consent_record']))
+    return rows
+
+
+def invoice_values(c, cid, sid, cutoff=None):
+    cutoff = cutoff or today()
+    sub = c.execute('SELECT * FROM case_subs WHERE case_id=? AND sub_id=?',(cid,sid)).fetchone()
+    if not sub:
+        raise runtime().Err('案件に登録されていない下請けです')
+    rows = confirmed_allocations(c,cid,sid,cutoff)
+    principal = sum(x['amount'] for x in rows if x['kind']=='principal')
+    hold = sum(x['amount'] for x in rows if x['kind']=='hold')
+    raw = sub['principal_tax_in'] - principal - hold
+    return dict(principal=sub['principal_tax_in'], allocated_principal=principal, allocated_hold=hold,
+                allocations=rows, invoice_amount=max(0,raw), excess=max(0,-raw), allocation_as_of=cutoff)

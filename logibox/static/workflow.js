@@ -75,6 +75,7 @@ function documentFields(){
  $('#doc_sub').closest('.f').hidden=type==='haak_invoice';
  $('#doc_due').closest('.f').hidden=type==='receipt';
  $('#document_item_names').closest('.f').hidden=type!=='principal_invoice';
+ refreshPrincipalInvoiceSummary();
 }
 function simplifySettings(migrationCount){
  if(settingsTab==='suppliers')selectSettingsTab('company');
@@ -396,6 +397,7 @@ function subSavedSummary(sub){
  const changes=d.history.map(x=>`<p>${esc(x.changed_at)} ／ ${esc(x.reason)}<br>変更前：${esc(fundingHistoryLabel(x.before))}<br>変更後：${esc(fundingHistoryLabel(x.after))}</p>`).join('');
  const events=d.ledger_history.map(x=>`<p>${esc(x.event_date||'日付未登録')} ／ ${esc(({principal:'元金充当',hold:'預かり金充当',created:'預かり発生',refund:'返金',cancel:'取消'})[x.kind]||x.kind)} ／ ${Y(x.amount)}${x.cancelled?'（取消済み）':''} ／ ${esc(x.note||'')}</p>`).join('');
  return `${progressBadge(p)}${savedSummary([['下請け',sub.sub_name],['担当元金',Y(sub.principal_tax_in)],['他案件・預かり金からの充当済額',Y(p.allocated)],['入金確認済額',Y(p.cash)],['確定資金合計',Y(p.confirmed)],['未充足額',Y(p.remaining)],['入金予定（未確認）',Y(p.planned)],['手数料率',sub.fee_rate_pct+'%'],['精算予定日',sub.settle_date||sub.settle_date_auto||'未登録'],['下請け利益',Y(sub.sub_profit)]])}
+ ${d.invoice?savedSummary([['元金請求額（確定充当控除後・実入金控除前）',Y(d.invoice.invoice_amount)],['他案件からの確定充当額',Y(d.invoice.allocated_principal)],['一時預かり金からの確定充当額',Y(d.invoice.allocated_hold)]]):''}
  <h3>充当元と入金の内訳</h3>${sources.map(x=>`<p><b>${esc(x.name)}</b> ／ ${Y(x.amount)} ／ ${x.valid?'確定日 '+esc(x.date):'充当予定・確定待ち'}<br>承諾：${esc(x.consent)}</p>`).join('')}${cash}
  ${p.legacy_cash?`<p>旧入金記録 ${esc(sub.principal_received_date)} ／ ${Y(p.legacy_cash)}（入金方法の記録なし）</p>`:''}
  ${!sources.length&&!cash&&!p.legacy_cash?'<p class="m">確定済みの入金・充当はありません。</p>':''}
@@ -438,6 +440,7 @@ function documentTargetAvailable(){
 function issuedDocumentRow(d){
  const label=({principal_invoice:'元金請求書',receipt:'領収書',haak_invoice:'ハーク請求書'})[d.doc_type];
  return `<div class="issued-summary ${d.progress?.complete?'complete-record':'review-record'}">${progressBadge(d.progress||{label:'発行記録あり',complete:false})}<h3>${esc(label)}　${esc(d.snapshot.doc_no||'番号未登録')}</h3>
+ ${d.doc_type==='principal_invoice'?savedSummary([['実入金確認済額',Y(d.cash_received)],['入金残高',Y(d.unpaid_amount)]]):''}
  ${savedSummary([['発行金額',Y(d.amount_tax_in)],['発行日',d.issued_date||'未登録'],['版',`第${d.revision}版`],['送付日',d.sent_date||'未登録']])}
  ${!d.pdf_available?'<p class="purchase-warning">保存済みPDFが見つかりません。発行記録を確認してください。</p>':''}
  <div class="acts">${d.pdf_available?`<button class="s" type="button" onclick="showIssuedDocument(${d.id})">PDFを表示</button>`:''}<button class="s" type="button" onclick="selectCaseTab('docs');showDocumentHistory(${d.id})">履歴を確認</button>${CUR.v.case.deleted_at?'':`<button class="s" type="button" onclick="openDocumentEdit(${d.id})">編集・再発行</button>`}</div></div>`;
@@ -488,4 +491,22 @@ function setupCaseSummaries(){
   const cancel=document.createElement('button');cancel.type='button';cancel.className='s';cancel.textContent='閉じる';cancel.onclick=()=>{form.hidden=true;add.hidden=false;invalidateDocumentPreview()};form.append(cancel);
   const type=$('#doc_type');if(invoice.length){type.querySelector('option[value=haak_invoice]').disabled=true;}
  }
+}
+
+let principalInvoiceSummaryRequest=0;
+async function refreshPrincipalInvoiceSummary(){
+ const target=$('#principal_invoice_summary');if(!target)return;
+ const request=++principalInvoiceSummaryRequest;
+ target.hidden=G('doc_type')!=='principal_invoice';
+ if(target.hidden)return;
+ const sid=G('doc_sub');
+ if(!sid){target.textContent='対象下請けを選ぶと請求額を自動計算します。';return;}
+ target.textContent='請求額を確認しています…';
+ try{
+  const data=await api('GET',`/api/cases/${CUR.v.case.id}/funding-options?sub_id=${encodeURIComponent(sid)}&issued_date=${encodeURIComponent(G('doc_date'))}`);
+  if(request!==principalInvoiceSummaryRequest||!target.isConnected)return;
+  const v=data.invoice;
+  const issued=CUR.docs.find(d=>d.doc_type==='principal_invoice'&&String(d.sub_id)===String(sid));
+  target.innerHTML=row('担当元金',Y(v.principal))+row('他案件からの充当済額',Y(v.allocated_principal))+row('一時預かり金からの充当済額',Y(v.allocated_hold))+row('新規現金入金確認済額（請求額の計算対象外）',Y(data.cash_received))+`<div class="row"><b>今回の請求額</b><strong style="font-size:1.6rem">${Y(v.invoice_amount)}</strong></div>`+(v.excess?row('超過充当額（要確認）',Y(v.excess)):'')+'<p class="m">担当元金から確定充当のみを控除します。請求書の発行は入金として記録しません。</p>'+(issued?'<p class="purchase-warning">発行済みの元金請求書があります。入金残高を確認してください。変更は「履歴・編集」から訂正・再発行してください。</p>':'');
+ }catch(error){if(request===principalInvoiceSummaryRequest)target.textContent=error.message;}
 }
