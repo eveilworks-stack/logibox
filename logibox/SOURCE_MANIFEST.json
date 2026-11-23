@@ -2,7 +2,7 @@
   "version": "0.6.8",
   "display_version": "0.68",
   "schema": 12,
-  "build": "138a3cdfaa560334a3a3fba17d80dce081bf0d306f34f5dd3c6ba8d5a0357936",
+  "build": "3bdbc350be19734e1c3751b2f4f4abfe1522248e03eb1b2f175fa0d21c35eb9d",
   "sha256": {
     "README.txt": "bf20e8839c96c5e9f3f137048628823093174caf91280e94db6a7e402cce907a",
     "UPDATE_ONLY.txt": "935d857328c48baed70b6547dcde7db84501ea93659123ae1e5e9f0773840bb8",
@@ -22,7 +22,7 @@
     "fonts/OFL.txt": "e753d7155d53c747d037a445e584c8ecfca6dd79846db610417e282a736b28bc",
     "funding_ledger.py": "d103fd3ecc22cee0956a68b7e7e64a4dffa8ec9481051391fdf7961566665569",
     "launch.ps1": "72ce0c7088efea30a49e61f69e64307ea7ae35c0eaacd8d2a3d3d05e56d0c941",
-    "launcher.py": "9a5a817c396b4d9187cef030a752bf83f394b49299922b0abca75d41d1dc187b",
+    "launcher.py": "ff8a9ec98e95c38586cc3ad7afc7a58a283554f2e6e613c62ad5af6bf0a38fef",
     "line_case_reader.py": "465935e39cecd35d13cbf0c28e3ce3acc2f683e3d9a7609ea00b9fbaf2f075f9",
     "logi-tomos.ico": "42537f016996e90a2f52bb87450f6765a191f39d1393e9430255fe13504b9a63",
     "logibox-yellow.ico": "78e93298a8601f04ef88cf776091cbe50613c5df3ecf82434a89bb29d90451f5",
