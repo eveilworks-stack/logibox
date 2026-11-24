@@ -4,7 +4,16 @@ env = dict(os.environ, APP_DATA=tmp)
 # Explicitly create a synthetic fixture; the update-only server refuses missing databases.
 subprocess.run([sys.executable, '-c', 'import server; server.init()'], env=env, check=True)
 p = subprocess.Popen([sys.executable, 'server.py', '--port', '8799', '--no-browser'], env=env, stdout=subprocess.DEVNULL)
-time.sleep(1.5)
+for attempt in range(150):
+    if p.poll() is not None:
+        raise RuntimeError('test server exited during startup')
+    try:
+        urllib.request.urlopen('http://127.0.0.1:8799/api/state', timeout=.2).close()
+        break
+    except (urllib.error.URLError, TimeoutError):
+        time.sleep(.1)
+else:
+    raise RuntimeError('test server startup timed out')
 cookie = ''
 def api(m, u, b=None, raw=False):
     global cookie

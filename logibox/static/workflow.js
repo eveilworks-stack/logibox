@@ -497,16 +497,24 @@ let principalInvoiceSummaryRequest=0;
 async function refreshPrincipalInvoiceSummary(){
  const target=$('#principal_invoice_summary');if(!target)return;
  const request=++principalInvoiceSummaryRequest;
+ const date=$('#doc_date');
+ date.max=new Date().toLocaleDateString('sv-SE');
  target.hidden=G('doc_type')!=='principal_invoice';
- if(target.hidden)return;
+ if(target.hidden){date.removeAttribute('min');delete date.dataset.invoiceTarget;return;}
  const sid=G('doc_sub');
  if(!sid){target.textContent='対象下請けを選ぶと請求額を自動計算します。';return;}
  target.textContent='請求額を確認しています…';
  try{
-  const data=await api('GET',`/api/cases/${CUR.v.case.id}/funding-options?sub_id=${encodeURIComponent(sid)}&issued_date=${encodeURIComponent(G('doc_date'))}`);
+  const key=`${CUR.v.case.id}:${sid}`;
+  const changed=date.dataset.invoiceTarget!==key;
+  const data=await api('GET',`/api/cases/${CUR.v.case.id}/funding-options?sub_id=${encodeURIComponent(sid)}${changed?'':'&issued_date='+encodeURIComponent(G('doc_date'))}`);
   if(request!==principalInvoiceSummaryRequest||!target.isConnected)return;
   const v=data.invoice;
+  if(!v)throw new Error(data.invoice_error||'請求額を確認してください');
+  date.min=v.min_issued_date||'';date.max=v.max_issued_date;
+  if(changed){date.value=v.default_issued_date;date.dataset.invoiceTarget=key;}
+  date.setCustomValidity('');
   const issued=CUR.docs.find(d=>d.doc_type==='principal_invoice'&&String(d.sub_id)===String(sid));
   target.innerHTML=row('担当元金',Y(v.principal))+row('他案件からの充当済額',Y(v.allocated_principal))+row('一時預かり金からの充当済額',Y(v.allocated_hold))+row('新規現金入金確認済額（請求額の計算対象外）',Y(data.cash_received))+`<div class="row"><b>今回の請求額</b><strong style="font-size:1.6rem">${Y(v.invoice_amount)}</strong></div>`+(v.excess?row('超過充当額（要確認）',Y(v.excess)):'')+'<p class="m">担当元金から確定充当のみを控除します。請求書の発行は入金として記録しません。</p>'+(issued?'<p class="purchase-warning">発行済みの元金請求書があります。入金残高を確認してください。変更は「履歴・編集」から訂正・再発行してください。</p>':'');
- }catch(error){if(request===principalInvoiceSummaryRequest)target.textContent=error.message;}
+ }catch(error){if(request===principalInvoiceSummaryRequest){target.textContent=error.message;date.setCustomValidity(error.message);}}
 }

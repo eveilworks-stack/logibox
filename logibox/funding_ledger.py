@@ -447,7 +447,7 @@ def confirmed_allocations(c, cid, sid, cutoff):
         rows.append(dict(kind=event['kind'], id=event['id'], amount=event['amount'],
                          case_no=label['source_case_no'] if label else source['case_no'],
                          name=label['source_name'] if label else source['name'],
-                         confirmed_on=event['event_date'], fund_id=event['fund_id'],
+                         confirmed_on=event['event_date'], consent_date=event['consent_date'], fund_id=event['fund_id'],
                          record=event['consent_record']))
     # 旧方式は承諾と確定日を持つ保存済み充当のみ。精算の支払待ちは入金と混同しない。
     for row in c.execute("""SELECT l.*,a.case_no,a.name FROM settlement_lines l
@@ -461,19 +461,67 @@ def confirmed_allocations(c, cid, sid, cutoff):
             raise runtime().Err('発行日後に変更された充当履歴があります。発行日と訂正内容を確認してください',409)
         rows.append(dict(kind='principal', id='legacy-'+str(row['id']), amount=row['carry_over'],
                          case_no=row['case_no'], name=row['name'],
-                         confirmed_on=row['carry_confirmed_date'] or row['consent_date'],
+                         confirmed_on=row['carry_confirmed_date'] or row['consent_date'], consent_date=row['consent_date'],
                          fund_id=None, record=row['consent_record']))
     return rows
 
 
+def invoice_date_rules(c, cid, sid):
+    # A confirmed transfer must have its own consent date. Never invent one.
+    missing = c.execute("""SELECT 1 FROM settlement_lines l JOIN settlements s ON s.id=l.settlement_id
+        WHERE l.carry_to_case_id=? AND s.sub_id=? AND l.carry_over>0
+        AND (l.consent_date IS NULL OR l.consent_date='') LIMIT 1""", (cid,sid)).fetchone()
+    events = active(c, 'e.target_id=? AND e.sub_id=?', (cid,sid), today())
+    if missing or any(not e['consent_date'] for e in events):
+        raise runtime().Err('充当承諾日の記録がありません。承諾日を確認・登録してください',409)
+    rows = confirmed_allocations(c,cid,sid,today())
+    rows = [r for r in rows if r.get('consent_date') and r['consent_date']<=today() and r.get('record')]
+    minimum = max((r['consent_date'] for r in rows), default=None)
+    return dict(min_issued_date=minimum, max_issued_date=today(),
+                default_issued_date=minimum or today(), allocations=rows)
+
+
+def validate_invoice_date(value, rows):
+    if any(not r.get('consent_date') for r in rows):
+        raise runtime().Err('充当承諾日を確認・登録してください',409)
+    minimum = max((r['consent_date'] for r in rows), default='')
+    if value > today() or (minimum and value < minimum):
+        raise runtime().Err('発行日は最新の充当承諾日以降、本日までの日付を選択してください')
+
+
+def recorded_allocation_consents(c, rows):
+    result = []
+    for original in rows:
+        row = dict(original)
+        if not row.get('consent_date'):
+            ident = str(row.get('id', ''))
+            if ident.startswith('legacy-'):
+                saved = c.execute('SELECT consent_date FROM settlement_lines WHERE id=?', (ident[7:],)).fetchone()
+            else:
+                saved = c.execute('SELECT consent_date FROM funding_events WHERE id=?', (ident,)).fetchone()
+            row['consent_date'] = saved['consent_date'] if saved else None
+        result.append(row)
+    return result
+
+
 def invoice_values(c, cid, sid, cutoff=None):
-    cutoff = cutoff or today()
+    rules = invoice_date_rules(c,cid,sid)
+    cutoff = cutoff or rules['default_issued_date']
+    if cutoff < today():
+        for change in c.execute('SELECT before_json FROM carry_change_history WHERE sub_id=? AND substr(changed_at,1,10)>?', (sid,cutoff)):
+            before = json.loads(change['before_json'])
+            confirmed = before.get('carry_confirmed_date') or before.get('consent_date')
+            if before.get('carry_to_case_id') == int(cid) and before.get('carry_over') and confirmed and confirmed <= cutoff:
+                raise runtime().Err('発行日後に変更・取消された充当履歴があります。発行日と訂正内容を確認してください',409)
     sub = c.execute('SELECT * FROM case_subs WHERE case_id=? AND sub_id=?',(cid,sid)).fetchone()
     if not sub:
         raise runtime().Err('案件に登録されていない下請けです')
-    rows = confirmed_allocations(c,cid,sid,cutoff)
+    rows = rules['allocations']
+    validate_invoice_date(cutoff,rows)
     principal = sum(x['amount'] for x in rows if x['kind']=='principal')
     hold = sum(x['amount'] for x in rows if x['kind']=='hold')
     raw = sub['principal_tax_in'] - principal - hold
     return dict(principal=sub['principal_tax_in'], allocated_principal=principal, allocated_hold=hold,
-                allocations=rows, invoice_amount=max(0,raw), excess=max(0,-raw), allocation_as_of=cutoff)
+                allocations=rows, invoice_amount=max(0,raw), excess=max(0,-raw), allocation_as_of=cutoff,
+                min_issued_date=rules['min_issued_date'], max_issued_date=rules['max_issued_date'],
+                default_issued_date=rules['default_issued_date'])

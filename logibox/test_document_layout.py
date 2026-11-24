@@ -47,7 +47,7 @@ class DocumentLayoutTests(unittest.TestCase):
                 self.assertAlmostEqual(found['origin'][1], y, places=2)
                 self.assertAlmostEqual(found['size'], size, places=2)
             name = next(s for s in text if s['text'] == '株式会社 TESTS')
-            self.assertLessEqual(name['bbox'][2], 492.01)
+            self.assertAlmostEqual(name['bbox'][2], 500, delta=.1)
             self.assertIn('43,621,278', pdf[0].get_text())
 
     def test_missing_company_rows_close_up_in_all_documents(self):
@@ -88,7 +88,10 @@ class DocumentLayoutTests(unittest.TestCase):
                     value = span['text']
                     if value.startswith(('株式会社 TESTS', '〒 ', '架空市', 'TEL：', 'Mail：', '担当：', '登録番号：', '発行日：')):
                         rect = fitz.Rect(span['bbox'])
-                        self.assertFalse(rect.intersects(seal), value)
+                        if value.startswith('株式会社 TESTS'):
+                            self.assertTrue(rect.intersects(seal), value)
+                        else:
+                            self.assertFalse(rect.intersects(seal), value)
                         self.assertLess(rect.y1, bottom)
 
 

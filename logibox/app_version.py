@@ -3,15 +3,15 @@ import hashlib
 import os
 from pathlib import Path
 
-VERSION = '0.6.8'
-DISPLAY_VERSION = '0.68'
+VERSION = '0.6.9'
+DISPLAY_VERSION = '0.69'
 SCHEMA_VERSION = 12
 ROOT = Path(__file__).resolve().parent
 
 
 def build_id(root=ROOT):
     digest = hashlib.sha256()
-    paths = [p for p in root.iterdir() if p.is_file() and p.suffix in ('.py', '.ps1', '.vbs', '.bat', '.sql')]
+    paths = [p for p in root.iterdir() if p.is_file() and p.suffix in ('.py', '.ps1', '.vbs', '.bat', '.command', '.sql')]
     paths.extend(p for p in (root / 'static').rglob('*') if p.is_file())
     for path in sorted(paths):
         digest.update(path.relative_to(root).as_posix().encode())

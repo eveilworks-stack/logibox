@@ -208,6 +208,14 @@ def init_schema(c):
     c.execute(f'PRAGMA user_version = {SCHEMA_VERSION}')
     if not existing and os.path.isfile(SEAL_SEED):
         setset(c, 'company_seal_png', bundled_company_seal())
+    seal = getset(c, 'company_seal_png')
+    if seal:
+        import company_seal
+        try:
+            company_seal.save(c, seal)
+        except (ValueError, OSError):
+            # Invalid legacy data remains available for explicit recovery.
+            pass
     c.commit()
 
 
@@ -820,7 +828,8 @@ def r_company_seal_restore(c, b, q):
     if b.get('confirmed') is not True:
         raise Err('同梱の社印を復元することを確認してください')
     encoded = bundled_company_seal()
-    if getset(c, 'company_seal_png') == encoded:
+    import company_seal
+    if getset(c, 'company_seal_png') == company_seal.encoded_png(encoded):
         return dict(ok=True, unchanged=True)
     backup = r_backup_full(c, {}, {})[1]
     with tempfile.NamedTemporaryFile(dir=os.path.dirname(DBP), prefix='before-seal-restore-', suffix='.zip', delete=False) as file:
@@ -831,8 +840,31 @@ def r_company_seal_restore(c, b, q):
     with zipfile.ZipFile(backup_path) as archive:
         if archive.testzip() is not None:
             raise Err('バックアップの検証に失敗したため、社印は変更していません')
-    setset(c, 'company_seal_png', encoded)
+    import company_seal
+    company_seal.save(c, encoded)
     return dict(ok=True, backup=os.path.basename(backup_path))
+
+
+def r_company_seal_upload(c, b, q):
+    import company_seal
+    encoded = txt(b, 'png_base64', '社印PNG', True, 1400000)
+    try:
+        company_seal.encoded_png(encoded)
+    except Exception as exc:
+        raise Err('有効な社印PNG（1MB以下）を選択してください') from exc
+    if len(base64.b64decode(encoded)) > 1000000:
+        raise Err('社印PNGは1MB以下を選択してください')
+    raw = r_backup_full(c, {}, {})[1]
+    with tempfile.NamedTemporaryFile(dir=os.path.dirname(DBP), prefix='before-seal-upload-', suffix='.zip', delete=False) as out:
+        out.write(raw)
+        out.flush()
+        os.fsync(out.fileno())
+        name = out.name
+    with zipfile.ZipFile(name) as archive:
+        if archive.testzip() is not None:
+            raise Err('バックアップを検証できないため社印を変更していません')
+    company_seal.save(c, encoded)
+    return dict(ok=True, backup=os.path.basename(name))
 
 
 def r_company_put(c, b, q):
@@ -1233,7 +1265,8 @@ def document_context(c,case_id,doc_type,sub_id=None):
         if h.get('confirmed_amount_tax_in') is None or not h.get('confirmed_checked'):
             raise Err('ハーク確定額と「確認済み」を登録してから請求書を発行してください')
         result.update(recipient='請求先',haak_amount=h['confirmed_amount_tax_in'],
-                      billing_date=h.get('billing_date'),due_date=h.get('due_date'),items_text=h.get('items_text'),note=h.get('note'))
+                      billing_date=h.get('billing_date'),due_date=h.get('due_date'),items_text=h.get('items_text'),
+                      product_details=principal_items_text(view['purchases']) or h.get('items_text') or '',note=h.get('note'))
     return result
 
 def document_payload(c, b, case_id, doc_type, sub_id=None, existing=None):
@@ -1242,6 +1275,9 @@ def document_payload(c, b, case_id, doc_type, sub_id=None, existing=None):
     base=document_context(c,case_id,doc_type,sub_id)
     today=datetime.date.today().isoformat()
     issued_date=dt(b,'issued_date','発行日') or today
+    if doc_type == 'principal_invoice' and not existing:
+        rules = funding_ledger.invoice_date_rules(c,int(case_id),int(sub_id))
+        issued_date = dt(b,'issued_date','発行日') or rules['default_issued_date']
     if doc_type=='principal_invoice':
         funding = (json.loads(existing['snapshot_json']) if existing and not b.get('recalculate_principal')
                    else funding_ledger.invoice_values(c,int(case_id),int(sub_id),issued_date))
@@ -1413,7 +1449,10 @@ def edited_document(c, r, b):
     if r['doc_type']=='principal_invoice' and not b.get('recalculate_principal'):
         for key in ('principal','amount_tax_in','allocated_principal','allocated_hold','allocations','invoice_amount','excess','allocation_as_of','carried_amount','paid_amount'):
             if key in prev: doc[key]=prev[key]
-        doc['issued_date']=prev['issued_date']
+        if doc['issued_date'] != prev['issued_date']:
+            rows = funding_ledger.recorded_allocation_consents(c,prev.get('allocations', []))
+            funding_ledger.validate_invoice_date(doc['issued_date'], rows)
+            doc['allocations'] = rows
     doc['doc_no']=prev['doc_no']
     return doc
 
@@ -2214,6 +2253,7 @@ ROUTES = [
     ('GET', r'/api/sub-mode-migrations', r_sub_mode_migrations),
     ('GET', r'/api/master', r_master), ('PUT', r'/api/company', r_company_put),
     ('POST', r'/api/company/seal/restore', r_company_seal_restore),
+    ('POST', r'/api/company/seal', r_company_seal_upload),
     ('POST', r'/api/subcontractors', r_subm_new), ('PUT', r'/api/subcontractors/(\d+)', r_subm_put),
     ('POST', r'/api/suppliers', r_supplier_new), ('POST', r'/api/password', r_password), ('GET', r'/api/backup', r_backup),
 ]

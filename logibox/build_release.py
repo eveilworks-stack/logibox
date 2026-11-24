@@ -6,10 +6,10 @@ sys.path.insert(0,str(APP))
 from app_version import VERSION,DISPLAY_VERSION,SCHEMA_VERSION,build_id
 
 APPLICATION='''app_version.py attachments.py auth_security.py calc.py carry_management.py
-case_summary.py documents.py funding_ledger.py launcher.py line_case_reader.py
+case_summary.py company_seal.py documents.py funding_ledger.py launcher.py line_case_reader.py
 password_recovery.py pdf_archive.py principal_balance.py principal_funding.py
 purchase_reader.py server.py settlement_documents.py update.py launch.ps1
-password_recovery.ps1 start.bat update.bat schema.sql requirements.txt app.ico logi-tomos.ico
+password_recovery.ps1 start.bat start.command update.bat schema.sql requirements.txt app.ico logi-tomos.ico
 logibox-yellow.ico build_release.py README.txt 起動.vbs パスワード再設定.vbs 更新手順.txt UPDATE_ONLY.txt 修正報告.txt'''.split()
 ASSETS='''static/index.html static/workflow.js static/funding.js static/logibox.svg
 fonts/BIZUDPGothic-Regular.ttf fonts/BIZUDPGothic-Bold.ttf fonts/OFL.txt
@@ -29,6 +29,7 @@ def main():
   for p in sorted(files+[APP/'SOURCE_MANIFEST.json']):
    info=zipfile.ZipInfo(f'LOGIBOX_ver{DISPLAY_VERSION}_update/logibox/'+p.relative_to(APP).as_posix(),(2026,1,1,0,0,0))
    info.compress_type=zipfile.ZIP_DEFLATED
+   info.external_attr = (0o100755 if p.suffix == '.command' else 0o100644) << 16
    z.writestr(info,p.read_bytes())
  (OUTPUT/'SHA256SUMS.txt').write_text(hashlib.sha256(path.read_bytes()).hexdigest()+'  '+path.name+'\n')
  print(path)

@@ -23,7 +23,7 @@ def verified_files(source):
         rel = Path(name)
         if (rel.is_absolute() or '..' in rel.parts or '\\' in name or ':' in name
                 or any(x.lower() in ('data', 'logibox pdf', '.git', '__pycache__') for x in rel.parts)
-                or rel.suffix.lower() not in ('.py', '.ps1', '.vbs', '.bat', '.sql', '.txt', '.md', '.ico', '.html', '.js', '.svg', '.ttf', '.pdf')):
+                or rel.suffix.lower() not in ('.py', '.ps1', '.vbs', '.bat', '.command', '.sql', '.txt', '.md', '.ico', '.html', '.js', '.svg', '.ttf', '.pdf')):
             raise RuntimeError('配布対象外のファイルです: ' + name)
         path = source / rel
         if path.is_symlink() or hashlib.sha256(path.read_bytes()).hexdigest() != expected:
@@ -73,12 +73,18 @@ def update(target, source=SOURCE):
         try:
             for rel in files:
                 destination = target / rel
+                # Fixed templates belong to the existing installation. Public
+                # packages contain redacted templates and must not replace them.
+                if rel.as_posix() in ('document_templates/haak_invoice.pdf', 'document_templates/principal_invoice.pdf') and destination.is_file():
+                    continue
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as staged:
                     pending = Path(staged.name)
                     staged.write((source / rel).read_bytes())
                 try:
                     os.replace(pending, destination)
+                    if rel.suffix == '.command' and os.name != 'nt':
+                        destination.chmod(destination.stat().st_mode | 0o111)
                 finally:
                     pending.unlink(missing_ok=True)
             # Invalidate only bytecode for replaced application modules, after backup.

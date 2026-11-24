@@ -122,5 +122,27 @@ class UpdateTests(unittest.TestCase):
             with self.assertRaises(RuntimeError): update.update(self.target,self.source)
         self.assertEqual((self.target / 'server.py').read_text(), 'old')
 
+    def test_mac_command_is_allowed_and_executable(self):
+        command = self.source / 'start.command'
+        command.write_text('#!/bin/sh\nexec python3 server.py\n')
+        self.manifest['sha256']['start.command'] = hashlib.sha256(command.read_bytes()).hexdigest()
+        self.save_manifest()
+        update.update(self.target,self.source)
+        self.assertEqual((self.target / 'start.command').read_bytes(),command.read_bytes())
+        if os.name != 'nt':
+            self.assertTrue(os.access(self.target / 'start.command',os.X_OK))
+
+    def test_existing_fixed_template_is_preserved(self):
+        name = 'document_templates/haak_invoice.pdf'
+        source = self.source / name
+        target = self.target / name
+        source.parent.mkdir();target.parent.mkdir()
+        source.write_bytes(b'public redacted template')
+        target.write_bytes(b'existing private fixed template')
+        self.manifest['sha256'][name] = hashlib.sha256(source.read_bytes()).hexdigest()
+        self.save_manifest()
+        update.update(self.target,self.source)
+        self.assertEqual(target.read_bytes(),b'existing private fixed template')
+
 
 if __name__ == '__main__': unittest.main()

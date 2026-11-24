@@ -1229,6 +1229,16 @@ async function viewSettings(){
  addCompanyFields(c);
  arrangeSettings();
  simplifySettings(migrations.length);
+ const upload=document.createElement('label');upload.className='f';
+ upload.textContent='社印PNGを登録（白背景は透明化・元画像を保存）';
+ const sealInput=document.createElement('input');sealInput.type='file';sealInput.accept='image/png';
+ sealInput.onchange=()=>act(async()=>{
+  const file=sealInput.files[0];if(!file)return;
+  if(file.size>1000000)throw new Error('社印PNGは1MB以下を選択してください');
+  const encoded=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(r.result.split(',')[1]);r.onerror=reject;r.readAsDataURL(file)});
+  await api('POST','/api/company/seal',{png_base64:encoded});await viewSettings();
+ },'社印を登録しました');
+ upload.append(sealInput);$('#settings-panel-company').append(upload);
  if(c.seal_png){
   const seal=document.createElement('div');
   seal.className='company-seal';

@@ -127,7 +127,8 @@ class PrincipalInvoiceTests(unittest.TestCase):
     def test_future_confirmation_not_reflected_in_past_date(self):
         a,t=self.prepare();self.allocate(a,t)
         past=(datetime.date.today()-datetime.timedelta(days=1)).isoformat()
-        self.assertEqual(self.payload(t,issued_date=past)['amount_tax_in'],4000000)
+        with self.assertRaisesRegex(self.s.Err,'承諾日'):
+            self.payload(t,issued_date=past)
         self.assertEqual(self.payload(t)['amount_tax_in'],2000000)
 
     def test_backdated_legacy_cancellation_requires_review(self):

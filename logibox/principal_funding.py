@@ -99,9 +99,15 @@ def options(c, cid, sid):
     plans = funding_ledger.cash_plans(c,cid,sid)
     credited = s.incoming_carry(c,cid,sid,today)
     master=c.execute('SELECT name FROM subcontractors WHERE id=?',(sid,)).fetchone()
+    invoice = invoice_error = None
+    if sub:
+        try:
+            invoice = funding_ledger.invoice_values(c,int(cid),sid)
+        except s.Err as exc:
+            invoice_error = exc.msg
     return dict(sub_name=master['name'] if master else '',sources=sources,principal_sources=principal_sources,custody_sources=custody_sources,
                 pool_available=pool['available'],available=min(capacity,sum(x['available'] for x in principal_sources+custody_sources)),
-                capacity=capacity,locked=locked,invoice=funding_ledger.invoice_values(c,int(cid),sid) if sub else None,confirmed_allocated=credited,confirmed_total=s.principal_confirmed(c,sub) if sub else 0,
+                capacity=capacity,locked=locked,invoice=invoice,invoice_error=invoice_error,confirmed_allocated=credited,confirmed_total=s.principal_confirmed(c,sub) if sub else 0,
                 cash_plans=plans,cash_planned=sum(x['amount'] for x in plans if x['status']=='planned'),
                 unavailable=[x for x in pool['unavailable'] if x['case_id']!=int(cid)],incoming=incoming,history=history,release=dict(release) if release else None,
                 custody=holds,ledger_history=ledger_history,ledger_incoming=ledger_incoming,cash_history=cash_history,

@@ -1,6 +1,7 @@
 function fundingPanel(cid,slot,s,data={}){
  const mode=s?.funding_method||((data.principal_sources||[]).length?'carry':(data.custody_sources||[]).length?'hold':'cash');
  return `<section class="funding-panel" id="funding-${slot}">
+ ${data.invoice_error?`<p class="purchase-warning">${esc(data.invoice_error)}</p>`:''}
  ${data.invoice?`<p class="m">元金請求額（確定充当控除後・実入金を含めず） <b>${Y(data.invoice.invoice_amount)}</b>${data.invoice.excess?' ／ 超過充当額 '+Y(data.invoice.excess):''}</p>`:''}
  <h3>下請け元金の登録・充当</h3><p class="funding-case"><b>${esc(CUR.v.case.case_no||'案件番号未登録')}</b> ${esc(CUR.v.case.name)}<br><span>${esc(s?.sub_name||data.sub_name||'下請けを選択してください')}</span></p>
  <div id="funding-summary-${slot}" class="funding-summary" aria-live="polite"></div>
