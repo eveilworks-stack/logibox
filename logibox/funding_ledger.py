@@ -435,7 +435,9 @@ def confirmed_allocations(c, cid, sid, cutoff):
     """元金管理と帳票で共用。実入金・精算支払とは別の確定充当明細。"""
     rows = []
     if cutoff < today():
-        for change in c.execute('SELECT before_json FROM carry_change_history WHERE sub_id=? AND substr(changed_at,1,10)>?',(sid,cutoff)):
+        for change in c.execute('SELECT before_json,changed_at FROM carry_change_history WHERE sub_id=? AND substr(changed_at,1,10)>=?',(sid,cutoff)):
+            if datetime.datetime.fromisoformat(change['changed_at']).astimezone().date().isoformat() <= cutoff:
+                continue
             before = json.loads(change['before_json'])
             confirmed = before.get('carry_confirmed_date') or before.get('consent_date')
             if (before.get('carry_to_case_id') == int(cid) and before.get('carry_over') and
@@ -508,7 +510,9 @@ def invoice_values(c, cid, sid, cutoff=None):
     rules = invoice_date_rules(c,cid,sid)
     cutoff = cutoff or rules['default_issued_date']
     if cutoff < today():
-        for change in c.execute('SELECT before_json FROM carry_change_history WHERE sub_id=? AND substr(changed_at,1,10)>?', (sid,cutoff)):
+        for change in c.execute('SELECT before_json,changed_at FROM carry_change_history WHERE sub_id=? AND substr(changed_at,1,10)>=?', (sid,cutoff)):
+            if datetime.datetime.fromisoformat(change['changed_at']).astimezone().date().isoformat() <= cutoff:
+                continue
             before = json.loads(change['before_json'])
             confirmed = before.get('carry_confirmed_date') or before.get('consent_date')
             if before.get('carry_to_case_id') == int(cid) and before.get('carry_over') and confirmed and confirmed <= cutoff:

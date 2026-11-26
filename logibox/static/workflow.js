@@ -149,7 +149,8 @@ function openSettlement(id){
  <header class="editor-head editor-title"><div><h2 id="settlement-title">${esc(s.sub_name)}　${esc(s.period)}の精算</h2><span class="t">${monthly.states[s.status]}</span></div><button class="s" type="button" onclick="this.closest('dialog').close()">閉じる</button></header>
  <div class="editor-body">
  <p>支払期限 <b>${esc(s.pay_date)}</b>　振込額 <b class="amount">${Y(s.total)}</b></p>
- ${s.request_needs_revision?'<p class="purchase-warning" role="alert">充当内容が依頼時点から変更されています。送付済み文面・発行済みPDFは変更していません。下請けへ訂正内容を連絡し、受領請求書の金額・明細も確認してください。</p>':''}
+ ${s.request_needs_revision&&s.status!=='paid'?`<button class="s" onclick="reviseProfitMonthly(${s.id})">利益精算後の訂正版を登録</button>`:''}
+ ${s.request_needs_revision?'<p class="purchase-warning" role="alert">精算内容が依頼時点から変更されています。送付済み文面・発行済みPDFは変更していません。下請けへ訂正内容を連絡し、受領請求書の金額・明細も確認してください。</p>':''}
  ${request?'<p class="m">依頼前 → 依頼済み → 請求書受領済 → 支払済み。文面・ひな形の生成だけでは依頼済みになりません。実際に送付した後で「依頼済みにする」を押してください。受領PDFが金額相違の場合は訂正版を登録します。</p>':''}
  ${s.lines.map(line=>`<section class="card"><h3>${caseLink(line.case_id,line.case_no||'案件番号未登録',line.case_name,'sub')}</h3>
  ${row('元金確認済 / 担当元金',Y(line.principal_confirmed)+' / '+Y(line.principal))}
@@ -423,7 +424,7 @@ function openNewCaseDocument(type){
  form.scrollIntoView({block:'nearest'});
 }
 function existingDocumentTarget(){
- return CUR.docs.find(d=>d.doc_type===G('doc_type')&&
+ return CUR.docs.find(d=>!d.cancellation&&d.doc_type===G('doc_type')&&
   (d.doc_type==='haak_invoice'||String(d.sub_id)===G('doc_sub')));
 }
 function syncDocumentTarget(){
@@ -446,10 +447,11 @@ function documentTargetAvailable(){
 function issuedDocumentRow(d){
  const label=({principal_invoice:'元金請求書',receipt:'領収書',haak_invoice:'ハーク請求書'})[d.doc_type];
  return `<div class="issued-summary ${d.progress?.complete?'complete-record':'review-record'}">${progressBadge(d.progress||{label:'発行記録あり',complete:false})}<h3>${esc(label)}　${esc(d.snapshot.doc_no||'番号未登録')}</h3>
- ${d.doc_type==='principal_invoice'?savedSummary([['実入金確認済額',Y(d.cash_received)],['入金残高',Y(d.unpaid_amount)]]):''}
+ ${d.cancellation?`<p class="purchase-warning">取消理由：${esc(d.cancellation.reason)} ／ ${esc(d.cancellation.cancelled_at)}</p>`:''}
+ ${d.doc_type==='principal_invoice'&&!d.cancellation?savedSummary([['実入金確認済額',Y(d.cash_received)],['入金残高',Y(d.unpaid_amount)]]):''}
  ${savedSummary([['発行金額',Y(d.amount_tax_in)],['発行日',d.issued_date||'未登録'],['版',`第${d.revision}版`],['送付日',d.sent_date||'未登録']])}
  ${!d.pdf_available?'<p class="purchase-warning">保存済みPDFが見つかりません。発行記録を確認してください。</p>':''}
- <div class="acts">${d.pdf_available?`<button class="s" type="button" onclick="showIssuedDocument(${d.id})">PDFを表示</button>`:''}<button class="s" type="button" onclick="selectCaseTab('docs');showDocumentHistory(${d.id})">履歴を確認</button>${CUR.v.case.deleted_at?'':`<button class="s" type="button" onclick="openDocumentEdit(${d.id})">編集・再発行</button>`}</div></div>`;
+ <div class="acts">${d.pdf_available?`<button class="s" type="button" onclick="showIssuedDocument(${d.id})">PDFを表示</button>`:''}<button class="s" type="button" onclick="selectCaseTab('docs');showDocumentHistory(${d.id})">履歴を確認</button>${CUR.v.case.deleted_at||d.cancellation?'':`<button class="s" type="button" onclick="openDocumentEdit(${d.id})">編集・再発行</button>`}</div></div>`;
 }
 function setupCaseSummaries(){
  const v=CUR.v,basic=$('#c_name').closest('.card');
@@ -472,6 +474,7 @@ function setupCaseSummaries(){
  for(const sub of v.subs){
   const card=$('#sub-panel-'+sub.slot);card.classList.add(sub.progress.complete?'complete-record':'review-record');
   summaryEditor(card,'sub-editor-'+sub.slot,subSavedSummary(sub),'下請け情報を編集');
+  const reset=card.querySelector('[onclick^="openSubReset"]');if(reset)card.append(reset);
  }
  for(const slot of [1,2])if(!v.subs.some(s=>s.slot===slot)){
   const card=$('#sub-panel-'+slot);
@@ -520,7 +523,7 @@ async function refreshPrincipalInvoiceSummary(){
   date.min=v.min_issued_date||'';date.max=v.max_issued_date;
   if(changed){date.value=v.default_issued_date;date.dataset.invoiceTarget=key;}
   date.setCustomValidity('');
-  const issued=CUR.docs.find(d=>d.doc_type==='principal_invoice'&&String(d.sub_id)===String(sid));
+  const issued=CUR.docs.find(d=>!d.cancellation&&d.doc_type==='principal_invoice'&&String(d.sub_id)===String(sid));
   target.innerHTML=row('担当元金',Y(v.principal))+row('他案件からの充当済額',Y(v.allocated_principal))+row('一時預かり金からの充当済額',Y(v.allocated_hold))+row('新規現金入金確認済額（請求額の計算対象外）',Y(data.cash_received))+`<div class="row"><b>今回の請求額</b><strong style="font-size:1.6rem">${Y(v.invoice_amount)}</strong></div>`+(v.excess?row('超過充当額（要確認）',Y(v.excess)):'')+'<p class="m">担当元金から確定充当のみを控除します。請求書の発行は入金として記録しません。</p>'+(issued?'<p class="purchase-warning">発行済みの元金請求書があります。入金残高を確認してください。変更は「履歴・編集」から訂正・再発行してください。</p>':'');
  }catch(error){if(request===principalInvoiceSummaryRequest){target.textContent=error.message;date.setCustomValidity(error.message);}}
 }

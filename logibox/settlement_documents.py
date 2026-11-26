@@ -71,6 +71,8 @@ def request_text(d):
               '元金充当がある明細には充当元・充当先案件番号と充当額を記載し、全額充当時は「利益のみの請求」と記載してください。',
               '請求書全体を上記の同一税率で計算し、消費税は税込合計から1回だけ円未満切り捨てで算出しています。',
               '請求書は貴社名義で発行し、発行日・請求書番号・登録番号・振込先を確認のうえPDFでお送りください。']
+    if any(line.get('profit_settlement') for line in d['lines']):
+        lines += ['', profit_text(d)]
     return '\n'.join(lines)
 
 
@@ -122,3 +124,17 @@ def render(d):
 
     doc.build(flow, onFirstPage=footer, onLaterPages=footer)
     return stream.getvalue()
+
+
+def profit_text(d):
+    lines=['利益精算明細（元金とは別管理）']
+    for line in d['lines']:
+        ps=line.get('profit_settlement',{})
+        if not ps: continue
+        lines.append(f"{mail_case_label(line)} / 確定利益 {ps['profit']:,}円 / 都度精算済み {ps['full_paid']:,}円 / 未精算残額 {ps['remaining']:,}円 / 別途支払予定 {ps['planned']:,}円 / {d['pay_date']}支払予定利益 {ps['monthly_scheduled']:,}円")
+        if ps['partial_paid']:
+            lines.append(f"  旧履歴の支払済み利益 {ps['partial_paid']:,}円")
+        for p in ps['payments']:
+            if not p['cancelled']:
+                lines.append(f"  {'都度精算' if p['method']=='full' else '旧精算履歴'} {p['amount']:,}円 / 実際の精算日 {p['paid_date'] or '未払い（予定のみ）'} / 予定日 {p['planned_date'] or '―'}")
+    return '\n'.join(lines)

@@ -125,9 +125,11 @@ def sync(c, files, docs, root):
                 str(Path(case_folder(cases[row['case_id']])) / category / label), row['case_id'], label)
         for row in c.execute('SELECT * FROM issued_documents ORDER BY id'):
             snapshot = json.loads(row['snapshot_json'])
+            cancelled=c.execute('SELECT reason FROM document_cancellations WHERE doc_id=?',(row['id'],)).fetchone()
             number = snapshot.get('doc_no')
             label = LABELS[row['doc_type']] + '_' + safe(snapshot.get('recipient') or number or row['id'])[:28]
-            stem = (safe(number.removesuffix('.pdf'))[:36] + '_' + label if isinstance(number, str) and number else label)
+            if cancelled: label='取消済み_'+label+' 理由：'+cancelled['reason']
+            stem = (safe(number.removesuffix('.pdf'))[:36] + '_' + safe(label)[:65] if isinstance(number, str) and number else safe(label)[:65])
             category = '03_ハーク' if row['doc_type']=='haak_invoice' else '02_下請け'
             add(f"issued:{row['id']}", docs, row['file'],
                 str(Path(case_folder(cases[row['case_id']])) / category / stem), row['case_id'], label)

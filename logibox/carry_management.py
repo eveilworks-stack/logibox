@@ -88,6 +88,8 @@ def change_history(c, line_id):
 
 def deletion_reasons(c, cid, cancelling=False):
     reasons = []
+    if c.execute('SELECT 1 FROM profit_payments WHERE case_id=?',(cid,)).fetchone():
+        reasons.append('利益精算履歴（予定・取消を含む）があります')
     if funding_ledger.history(c,'e.source_case_id=? OR e.target_id=?',(cid,cid)) or c.execute('SELECT 1 FROM principal_cash_entries WHERE case_id=?',(cid,)).fetchone():
         reasons.append('元金充当・預かり金・入金台帳の履歴があります')
     if c.execute('SELECT 1 FROM principal_accounts WHERE case_id=?',(cid,)).fetchone():

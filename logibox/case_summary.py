@@ -50,7 +50,7 @@ def enrich(view, today=None):
         complete = (doc['pdf_available'] and occurred(doc['issued_date'], today)
                     and isinstance(doc['amount_tax_in'], int) and doc['amount_tax_in'] > 0
                     and bool(snapshot.get('doc_no')))
-        doc['progress'] = state('発行済み' if complete else '要確認（発行記録）', complete)
+        doc['progress'] = state('取消済み',False) if doc.get('cancellation') else state('発行済み' if complete else '要確認（発行記録）', complete)
     h = view['haak']
     amount = h.get('confirmed_amount_tax_in')
     # Existing DBs use NULL actual_paid_amount to mean the entire confirmed amount.

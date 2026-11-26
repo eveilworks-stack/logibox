@@ -17,6 +17,8 @@ import principal_funding
 import principal_balance
 import funding_ledger
 import case_summary
+import sub_participation
+import profit_settlement
 from auth_security import hash_pw, check_pw, data_lock
 from app_version import DISPLAY_VERSION, VERSION, SCHEMA_VERSION, runtime_identity
 
@@ -118,6 +120,7 @@ def init_schema(c):
             file.write(backup)
     c.execute('BEGIN IMMEDIATE')
     funding_ledger.init(c)
+    sub_participation.init(c)
     c.execute('CREATE TABLE IF NOT EXISTS settings(k TEXT PRIMARY KEY, v TEXT)')
     # 既存データに対しても安全にフェーズ2の追加テーブルを作成
     c.execute("""CREATE TABLE IF NOT EXISTS attachments (id INTEGER PRIMARY KEY, case_id INTEGER NOT NULL REFERENCES cases(id) ON DELETE RESTRICT, purchase_id INTEGER REFERENCES purchases(id) ON DELETE SET NULL, kind TEXT NOT NULL CHECK(kind IN ('purchase_invoice','purchase_receipt','other')), original_name TEXT NOT NULL, stored_name TEXT NOT NULL UNIQUE, mime TEXT NOT NULL, bytes INTEGER NOT NULL, created_at TEXT NOT NULL)""")
@@ -206,6 +209,7 @@ def init_schema(c):
             c.execute('UPDATE mgmt_counters SET last_seq=MAX(last_seq,?) WHERE year=?', (int(match[2]), year))
     c.execute("""CREATE TRIGGER IF NOT EXISTS immutable_case_number BEFORE UPDATE OF mgmt_no ON cases
                  WHEN NEW.mgmt_no<>OLD.mgmt_no BEGIN SELECT RAISE(ABORT,'immutable case number'); END""")
+    profit_settlement.init(c)
     c.execute(f'PRAGMA user_version = {SCHEMA_VERSION}')
     if not existing and os.path.isfile(SEAL_SEED):
         setset(c, 'company_seal_png', bundled_company_seal())
@@ -356,6 +360,7 @@ def case_view(c, cid, need_active=False):
         d['payout'] = calc.sub_payout(pr, d['sub_profit'])
         d['principal_ex'], d['principal_tax'] = calc.tax_split(pr)
         d['settle_date_auto'] = default_settle(case['due_date'])
+        d['profit_settlement'] = profit_settlement.summary(c, cid, d['sub_id'])
         subs.append(d)
     h = c.execute('SELECT * FROM haak_billings WHERE case_id=?', (cid,)).fetchone()
     haak = dict(h) if h else {}
@@ -444,11 +449,12 @@ def r_dashboard(c, b, q):
             if settlement and settlement['status'] == 'paid':
                 continue
             amount = calc.sub_payout(settlement['principal'], settlement['sub_profit'], settlement['carry_over']) if settlement else s['payout']
+            amount -= s['profit_settlement']['individual_paid'] + s['profit_settlement']['planned']
             amount -= balance['refunded'] + funding_ledger.outgoing(c,i,s['sub_id'])
             due = settlement['pay_date'] if settlement else s['settle_date_auto']
             period = cs['due_date'][:7] if cs['due_date'] else ''
             tot['sub_unsettled'] += amount
-            tot['sub_unsettled_profit'] += settlement['sub_profit'] if settlement else s['sub_profit']
+            tot['sub_unsettled_profit'] += (settlement['sub_profit'] if settlement else s['sub_profit']) - s['profit_settlement']['individual_paid'] - s['profit_settlement']['planned']
             todo.append(dict(id=i, tab='sub', period=period, text=f"{s['settlement_no']} {s['sub_name']}へ精算 {amount:,}円", due=due))
         for p in v['purchases']:
             if p['paid_amount'] < p['amount_tax_in']:
@@ -461,7 +467,8 @@ def r_dashboard(c, b, q):
         tot['principal']+=fund['balance']
     for sid, group in principals.items():
         group['available'] = principal_funding.available_pool(c,sid)['available']
-    return dict(totals=tot, progress=progress, todo=todo, principals=list(principals.values()))
+    return dict(totals=tot, progress=progress, todo=todo, principals=list(principals.values()),
+                profit_subcontractors=profit_settlement.r_list(c, {}, {})['subcontractors'])
 
 
 def case_progress(v):
@@ -478,6 +485,7 @@ def r_cases(c, b, q):
         v = case_view(c, r['id'])
         cs = v['case']
         out.append(dict(id=cs['id'], mgmt_no=cs['mgmt_no'], name=cs['name'], due_date=cs['due_date'], case_no=cs['case_no'],
+                        profit_statuses=list({s['profit_settlement']['status'] for s in v['subs']}),
                         subs=len(v['subs']), purchase_total=v['calc']['purchase_total'], own_profit=v['calc']['own_profit'],
                         confirmed=v['calc']['confirmed'], progress=case_progress(v), planned_rate_pct=cs['planned_rate_pct'],
                         total_profit=v['calc']['total_profit'], sub_profit=v['calc']['sub_profit_total'],
@@ -541,6 +549,7 @@ def r_case_get(c, b, q, cid):
         sub['principal_confirmed'] = principal_confirmed(c, sub)
         sub['carry_reserved'] = incoming_carry(c, cid, sub['sub_id'])
         sub['funding'] = principal_funding.options(c, int(cid), sub['sub_id'])
+    view['participation_resets'] = [dict(r) for r in c.execute('''SELECT r.slot,r.mode,r.reason,r.created_at,s.name AS sub_name FROM sub_participation_resets r JOIN subcontractors s ON s.id=r.sub_id WHERE r.case_id=? ORDER BY r.id DESC''',(cid,))]
     view['documents'] = case_documents(c, cid)
     return case_summary.enrich(view)
 
@@ -556,6 +565,8 @@ def r_case_put(c, b, q, cid):
         warning = duplicate_case_warning(c, f['case_no'], int(cid))
         if warning:
             raise Err(warning, 409)
+    if f['planned_rate_pct'] != case_view(c,cid)['case']['planned_rate_pct'] and c.execute('SELECT 1 FROM profit_payments WHERE case_id=?',(cid,)).fetchone():
+        raise Err('利益精算履歴がある案件の利益率は変更できません',409)
     c.execute('UPDATE cases SET case_no=?,name=?,start_date=?,due_date=?,planned_rate_pct=?,maker=?,purchase_limit_tax_in=? WHERE id=?',
               (f['case_no'], f['name'], f['start_date'], f['due_date'], f['planned_rate_pct'], f['maker'], f['purchase_limit_tax_in'], int(cid)))
     return dict(ok=True)
@@ -812,6 +823,11 @@ def r_haak_put(c, b, q, cid):
         actual = yen(b,'actual_paid_amount','ハーク実入金累計額')
         c.execute('UPDATE haak_billings SET actual_paid_amount=? WHERE case_id=?',(actual,int(cid)))
     principal_balance.validate_case(c,int(cid))
+    if c.execute('SELECT 1 FROM profit_payments WHERE case_id=? AND cancelled=0',(cid,)).fetchone():
+        for sub in c.execute('SELECT sub_id FROM case_subs WHERE case_id=?',(cid,)):
+            ps=profit_settlement.summary(c,cid,sub['sub_id'])
+            if not ps['confirmed'] or ps['remaining']<ps['planned']:
+                raise Err('利益精算済み・予定の案件は確定を解除できません',409)
     return dict(ok=True)
 
 
@@ -1306,7 +1322,7 @@ def document_context(c,case_id,doc_type,sub_id=None):
         h=view['haak']
         if h.get('confirmed_amount_tax_in') is None or not h.get('confirmed_checked'):
             raise Err('ハーク確定額と「確認済み」を登録してから請求書を発行してください')
-        result.update(recipient='請求先',haak_amount=h['confirmed_amount_tax_in'],
+        result.update(recipient='株式会社 Haak（ハーク）',haak_amount=h['confirmed_amount_tax_in'],
                       billing_date=h.get('billing_date'),due_date=h.get('due_date'),items_text=h.get('items_text'),
                       product_details=principal_items_text(view['purchases']) or h.get('items_text') or '',note=h.get('note'))
     return result
@@ -1437,7 +1453,7 @@ def r_doc_new(c, b, q, cid, *, session):
             "SELECT 1 FROM issued_documents WHERE case_id=? AND doc_type='haak_invoice'", (cid,)).fetchone():
         raise Err('ハーク請求書は登録済みです。発行済み帳票の「編集・再発行」を使用してください。', 409)
     if typ == 'principal_invoice':
-        if c.execute("SELECT 1 FROM issued_documents WHERE case_id=? AND sub_id=? AND doc_type='principal_invoice'",(int(cid),sid)).fetchone():
+        if c.execute("SELECT 1 FROM issued_documents WHERE case_id=? AND sub_id=? AND doc_type='principal_invoice' AND NOT EXISTS(SELECT 1 FROM document_cancellations x WHERE x.doc_id=issued_documents.id)",(int(cid),sid)).fetchone():
             raise Err('発行済みの元金請求書があります。未入金・一部入金の残高を確認し、必要な場合は履歴・編集から訂正・再発行してください。二重発行はできません。',409)
         if not doc['amount_tax_in']:
             raise Err('今回の請求額は0円です。充当済みのため請求書を発行できません。',409)
@@ -1467,7 +1483,10 @@ def r_docs(c,b,q,cid):
 def case_documents(c, cid):
     out=[]
     for r in c.execute('SELECT * FROM issued_documents WHERE case_id=? ORDER BY id DESC',(int(cid),)):
-        d=dict(r);d['snapshot']=json.loads(d.pop('snapshot_json'))
+        d=dict(r)
+        cancellation=c.execute('SELECT reason,cancelled_at FROM document_cancellations WHERE doc_id=?',(r['id'],)).fetchone()
+        d['cancellation']=dict(cancellation) if cancellation else None
+        d['snapshot']=json.loads(d.pop('snapshot_json'))
         stored=d.pop('file',None)
         try:
             d['pdf_available']=bool(stored) and os.path.isfile(attachments.safe_path(DOCS,stored))
@@ -1487,6 +1506,8 @@ def issued_document(c, did):
 
 
 def edited_document(c, r, b):
+    if c.execute('SELECT 1 FROM document_cancellations WHERE doc_id=?',(r['id'],)).fetchone():
+        raise Err('取消済み書類は編集・再発行できません。新しく請求書を作成してください',409)
     prev=json.loads(r['snapshot_json'])
     merged=dict(prev);merged.update(b)
     doc=document_payload(c,merged,r['case_id'],r['doc_type'],r['sub_id'],existing=r)
@@ -1570,6 +1591,8 @@ def r_doc_history_preview(c, b, q, hid):
 
 
 def r_doc_sent(c,b,q,did):
+    if c.execute('SELECT 1 FROM document_cancellations WHERE doc_id=?',(int(did),)).fetchone():
+        raise Err('取消済み書類は送付済みにできません',409)
     sent = dt(b,'sent_date','送付日')
     c.execute('UPDATE issued_documents SET sent_date=? WHERE id=?',(sent,int(did)))
     if not c.execute('SELECT changes()').fetchone()[0]:raise Err('書類が見つかりません',404)
@@ -1598,6 +1621,8 @@ SETTLEMENT_STATES = {
 
 
 def settlement_link(c, cid, sid):
+    if c.execute('SELECT 1 FROM profit_payments WHERE case_id=? AND sub_id=?',(cid,sid)).fetchone():
+        return True
     if c.execute('SELECT 1 FROM principal_cash_plans WHERE case_id=? AND sub_id=?',(cid,sid)).fetchone():
         return True
     if funding_ledger.history(c,'e.sub_id=? AND (e.source_case_id=? OR e.target_id=?)',(sid,cid,cid)) or funding_ledger.cash(c,cid,sid):
@@ -1689,6 +1714,13 @@ def settlement_view(c, sid):
         item['refunded'] = balance['refunded']
         item['ledger_outgoing'] = funding_ledger.outgoing(c,line['case_id'],row['sub_id'])
         item['payout'] -= balance['refunded'] + item['ledger_outgoing']
+        ps = profit_settlement.summary(c, line['case_id'], row['sub_id'])
+        item['profit_settlement'] = ps
+        frozen_payment = c.execute('SELECT deducted,reserved FROM profit_monthly_payments WHERE line_id=?',(line['id'],)).fetchone()
+        item['profit_deducted'] = frozen_payment['deducted'] if frozen_payment else ps['individual_paid']
+        item['profit_reserved'] = frozen_payment['reserved'] if frozen_payment else ps['planned']
+        item['profit_payable'] = max(0,line['sub_profit']-item['profit_deducted']-item['profit_reserved'])
+        item['payout'] -= item['profit_deducted'] + item['profit_reserved']
         item['profit_only'] = line['carry_over'] + item['ledger_outgoing'] == line['principal'] and line['principal']>0
         item['recovered_available'] = min(item['principal_available'], balance['recovered'])
         item['principal_received_date'] = sub['principal_received_date'] if sub else None
@@ -1748,6 +1780,9 @@ def settlement_view(c, sid):
     if saved_text:
         document['edited_request_text'] = saved_text
     view['amount_ex_tax'], view['tax_amount'] = document['amount_ex_tax'], document['tax_amount']
+    if row['request_snapshot_json'] and any(line.get('profit_settlement',{}).get('payments') for line in view['lines']):
+        live = dict(document, lines=view['lines'], total=view['total'])
+        view['request_text'] += '\n\n【利益精算の最新状況・締め時点の記録は保持】\n' + settlement_documents.profit_text(live)
     view['archive_directory'] = pdf_archive_root(c)
     return view
 
@@ -1987,6 +2022,9 @@ def r_settlement_status(c, b, q, settlement_id):
             raise Err('支払・充当完了日は請求書受領日以降の日付を指定してください')
         if view['total'] and (not view['invoices'] or view['invoices'][0]['amount_tax_in'] != view['total']):
             raise Err('請求書と依頼金額が一致していません')
+        if view['request_needs_revision'] and any(x['profit_settlement']['payments'] for x in view['lines']):
+            raise Err('利益精算後の訂正版を登録し、請求書の金額を確認してください',409)
+        profit_settlement.record_monthly(c, view, paid)
         c.execute('UPDATE settlements SET status=?,paid_at=? WHERE id=?', (status, paid, settlement_id))
     else:
         raise Err('この状態では操作できません', 409)
@@ -2096,6 +2134,10 @@ def transaction_rows(c, cases, settlements):
                    s['principal_tax_in'] - reserved, subs[s['sub_id']], None, s['principal_received_date'],
                    s['principal_tax_in'] - reserved if s['principal_received_date'] else 0,
                    '10%' if s['tax_mode'] == SUB_TAX_MODE else None, s['settlement_no'])
+    for p in c.execute("""SELECT p.*,a.mgmt_no,sc.name FROM profit_payments p JOIN cases a ON a.id=p.case_id
+        JOIN subcontractors sc ON sc.id=p.sub_id WHERE p.cancelled=0 ORDER BY p.id"""):
+        yield (p['paid_date'] or p['planned_date'],p['mgmt_no'],'下請け精算',p['name'],p['amount'],subs[p['sub_id']],
+               p['planned_date'],p['paid_date'],p['amount'] if p['paid_date'] else 0,None,'利益精算 PS-'+str(p['id']))
     for s in settlements:
         for line in s['lines']:
             yield (s['period'] + '-01', line['mgmt_no'], '下請け精算', s['sub_name'], line['payout'],
@@ -2153,7 +2195,8 @@ def balances_at(c, cases, settlements, cutoff):
             if received:
                 yield ('精算前の確認済元金', number, name, s['sub_name'], received, s['settlement_no'])
             if a['due_date'] and a['due_date'] <= cutoff:
-                payout = line.get('payout', s['payout'])
+                individual_paid = sum(p['amount'] for p in s['profit_settlement']['payments'] if not p['cancelled'] and p['paid_date'] and p['paid_date']<=cutoff)
+                payout = (line.get('principal',s['principal_tax_in']) + line.get('sub_profit',s['sub_profit']) - line.get('carry_over',0) - line.get('refunded',0) - line.get('ledger_outgoing',0) - individual_paid)
                 if payout:
                     yield ('下請け未精算', number, name, s['sub_name'], payout, s['settlement_no'])
 
@@ -2195,10 +2238,13 @@ def r_export(c, b, q, report):
                          for month, d in sorted(months.items())))
     if report == 'profit':
         rows = ((a['mgmt_no'], a['case_no'], a['name'], a['due_date'], k['purchase_total'], k['basis_amount'],
-                 '確定' if k['confirmed'] else '見込', k['total_profit'], k['sub_profit_total'], k['own_profit'])
-                for a, k in ((v['case'], v['calc']) for v in cases) if in_period(a['due_date']))
+                 '確定' if k['confirmed'] else '見込', k['total_profit'], k['sub_profit_total'], k['own_profit'],
+                 sum(s['profit_settlement']['full_paid'] for s in v['subs']),
+                 sum(s['profit_settlement']['remaining'] for s in v['subs']),sum(s['profit_settlement']['planned'] for s in v['subs']),
+                 sum(s['profit_settlement']['monthly_scheduled'] for s in v['subs']))
+                for v,a,k in ((v,v['case'],v['calc']) for v in cases) if in_period(a['due_date']))
         return csv_file(report, ('管理番号', '案件番号', '案件名', '納期', '仕入額', 'ハーク請求額',
-                                 '確定区分', '全体利益', '下請け利益', '自社利益'), rows)
+                                 '確定区分', '全体利益', '下請け利益', '自社利益','都度精算済み','未精算利益','別途支払予定','月次支払利益'), rows)
     if report == 'settlements':
         rows = ((s['period'], s['sub_name'], line['slot'], line['mgmt_no'], line['case_name'], line['principal'],
                  line['sub_profit'], line['carry_over']+line.get('ledger_outgoing',0), line['target_no'], line['consent_date'],
@@ -2206,11 +2252,13 @@ def r_export(c, b, q, report):
                  line['case_no'], line['target_case_no'], '利益のみ' if line['profit_only'] else '元金残額＋利益',
                  s['request_document']['tax_rate'], '一時預かり' if line['temporary_hold'] else '別案件充当' if line['carry_over']+line.get('ledger_outgoing',0) else '返金',
                  line['carry_over'] if line['temporary_hold'] else 0, line['consent_method'],
-                 ' / '.join((e['target_case_no'] or '案件番号未登録')+' '+(e['target_name'] or '')+' '+str(e['amount'])+'円 '+e['event_date'] for e in funding_ledger.history(c,"e.source_case_id=? AND e.sub_id=? AND e.kind='principal'",(line['case_id'],s['sub_id'])) if not e['cancelled']))
+                 ' / '.join((e['target_case_no'] or '案件番号未登録')+' '+(e['target_name'] or '')+' '+str(e['amount'])+'円 '+e['event_date'] for e in funding_ledger.history(c,"e.source_case_id=? AND e.sub_id=? AND e.kind='principal'",(line['case_id'],s['sub_id'])) if not e['cancelled']),
+                 line['profit_settlement']['status'],line['profit_settlement']['full_paid'],
+                 line['profit_settlement']['remaining'],line['profit_reserved'],line['profit_payable'])
                 for s in settlements if in_period(s['period']) for line in s['lines'])
         return csv_file(report, ('対象月', '下請け', '下請け枠', '案件管理番号', '案件名', '元金', '下請け利益',
                                  '充当額', '充当先', '承諾日', '承諾記録', '振込額', '支払期限', '状態', '完了日', '精算管理番号',
-                                 '案件番号', '充当先案件番号', '請求方式', '依頼税率', '元金の取扱い', '一時預かり額', '承諾方法', '分割充当先・金額・確定日'), rows)
+                                 '案件番号', '充当先案件番号', '請求方式', '依頼税率', '元金の取扱い', '一時預かり額', '承諾方法', '分割充当先・金額・確定日', '利益精算状態','都度精算済み','未精算利益','別途支払予定','月次支払利益'), rows)
     cutoff = dt({'at': q.get('at', [''])[0]}, 'at', '期末日')
     if not cutoff:
         raise Err('期末日を指定してください')
@@ -2251,7 +2299,8 @@ def r_evidence(c, b, q, cid):
             for old in c.execute("SELECT * FROM attachment_revisions WHERE attachment_id=? AND mime='application/pdf'", (a['id'],)):
                 add(FILES, old['stored_name'], f"仕入等/履歴/添付-{a['id']}-{old['id']}", old['original_name'])
         for doc in c.execute('SELECT * FROM issued_documents WHERE case_id=?', (cid,)):
-            label = f"{types[doc['doc_type']]}-{doc['id']}"
+            cancelled=c.execute('SELECT reason FROM document_cancellations WHERE doc_id=?',(doc['id'],)).fetchone()
+            label = ('取消済み-' if cancelled else '')+f"{types[doc['doc_type']]}-{doc['id']}"
             add(DOCS, doc['file'], f"発行/{label}-v{doc['revision']}")
             for old in c.execute('SELECT * FROM issued_document_history WHERE doc_id=?', (doc['id'],)):
                 add(DOCS, old['file'], f"発行/履歴/{label}-v{old['revision']}")
@@ -2264,6 +2313,14 @@ def r_evidence(c, b, q, cid):
 
 
 ROUTES = [
+    ('POST', r'/api/settlements/(\d+)/profit-revision', profit_settlement.r_monthly_revision),
+    ('GET', r'/api/profit-settlements', profit_settlement.r_list),
+    ('GET', r'/api/cases/(\d+)/subs/(\d+)/profit', profit_settlement.r_get),
+    ('POST', r'/api/cases/(\d+)/subs/(\d+)/profit', profit_settlement.r_save),
+    ('GET', r'/api/profit-payments/(\d+)/pdf', profit_settlement.r_document),
+    ('POST', r'/api/profit-payments/(\d+)/pdf', profit_settlement.r_document),
+    ('GET', r'/api/profit-documents/(\d+)/pdf', profit_settlement.r_document_get),
+
     ('GET', r'/api/cases/(\d+)/deletion-check', r_case_deletion_check),
     ('GET', r'/api/settings/pdf-archive', r_pdf_archive_settings),
     ('PUT', r'/api/settings/pdf-archive', r_pdf_archive_settings_put),
@@ -2287,6 +2344,8 @@ ROUTES = [
     ('POST', r'/api/cases/(\d+)/purge', r_purge), ('GET', r'/api/trash', r_trash),
     ('POST', r'/api/cases/(\d+)/purchases', r_purchase_new), ('PUT', r'/api/purchases/(\d+)', r_purchase_put),
     ('DELETE', r'/api/purchases/(\d+)', r_purchase_del),
+    ('GET', r'/api/cases/(\d+)/subs/([12])/reset', sub_participation.preview),
+    ('POST', r'/api/cases/(\d+)/subs/([12])/reset', sub_participation.apply),
     ('PUT', r'/api/cases/(\d+)/subs/([12])', r_sub_put), ('DELETE', r'/api/cases/(\d+)/subs/([12])', r_sub_del),
     ('GET', r'/api/cases/(\d+)/funding-options', r_funding_options),
     ('POST', r'/api/cases/(\d+)/subs/(\d+)/custody', funding_ledger.create_hold),
@@ -2368,9 +2427,10 @@ class H(BaseHTTPRequestHandler):
                 raise Err('許可されていないアクセスです', 403)
             if method == 'GET' and u.path == '/api/runtime':
                 return self.js(RUNTIME)
-            if method == 'GET' and u.path in ('/', '/workflow.js', '/funding.js', '/static/logibox.svg'):
+            if method == 'GET' and u.path in ('/', '/workflow.js', '/funding.js', '/profit.js', '/static/logibox.svg'):
                 name, mime = {'/': ('index.html', 'text/html'), '/workflow.js': ('workflow.js', 'text/javascript'),
                               '/funding.js': ('funding.js', 'text/javascript'),
+                              '/profit.js': ('profit.js', 'text/javascript'),
                               '/static/logibox.svg': ('logibox.svg', 'image/svg+xml')}[u.path]
                 with open(os.path.join(BASE, 'static', name), 'rb') as page:
                     content = page.read()
@@ -2430,7 +2490,7 @@ class H(BaseHTTPRequestHandler):
                             sync_pdf_archive(c)
                         if isinstance(res, tuple) and res[0] in ('file', 'inline'):
                             mime = res[3] if len(res) > 3 else 'application/octet-stream'
-                            preview = res[0] == 'inline'
+                            preview = res[0] == 'inline' or (mime == 'application/pdf' and parse_qs(u.query).get('preview') == ['1'])
                             kind = 'inline' if preview else 'attachment'
                             return self.out(200, res[1], mime, [('Content-Disposition', f'{kind}; filename="{res[2]}"')],
                                             preview=preview)

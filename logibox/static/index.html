@@ -229,6 +229,10 @@ h3{font-size:17px}
 @media(max-width:720px){.case-rate-row{display:none}}
 .case-list .card{padding:14px 16px}
 .case-list .filter-bar{margin-bottom:8px}
+.case-list .case-sort-button{background:transparent;color:inherit;border:0;border-radius:3px;padding:0;min-height:32px;font:inherit;font-weight:inherit;white-space:nowrap}
+.case-sort-button:hover{color:var(--acc)}
+.case-sort-button:focus-visible{outline:2px solid var(--acc);outline-offset:3px}
+.case-sort-indicator{display:inline-block;min-width:1em;margin-left:4px;font-size:.85em}
 .case-list .list-trash{margin:0}
 .case-list .case-actions{align-items:center;margin:0 0 10px}
 .case-list .purchase-tools{display:flex;align-items:end;flex-wrap:wrap;gap:6px 14px;margin-bottom:10px}
@@ -342,6 +346,7 @@ button.s,.doc-tool{background:#f8fbfd;color:var(--acc);border-color:#acc3d5}
 <div id="app"></div><div id="toast"></div>
 <script src="/workflow.js?v=__APP_BUILD__"></script>
 <script src="/funding.js?v=__APP_BUILD__"></script>
+<script src="/profit.js?v=__APP_BUILD__"></script>
 <script>
 const $=s=>document.querySelector(s);
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -452,7 +457,7 @@ async function viewDash(){
  ${stat('ハークへの請求見込額',Y(t.haak_planned_total),`要確認：仕入済み・請求額未確定 <a href="#/haak">${t.haak_unconfirmed_cases}件</a>`,'#/haak')}
  ${stat('自社利益（確定案件）',Y(t.own),'','#/profit')}
  </div>
- <div class="dash-middle"><section class="card dash-partners"><h2>下請け元金・未精算状況</h2>
+ <div class="dash-middle"><section class="card dash-partners"><h2>下請け元金・未精算状況</h2><button class="s" onclick="openProfitList()">下請け別利益精算</button>
  <div class="dash-metrics">
  <div class="dash-metric dash-principal-total"><span>元金残高 合計</span><strong class="dash-money">${Y(t.principal)}</strong></div>
  <div class="dash-metric dash-unsettled"><a href="#/monthly">下請け未精算利益 合計</a><strong class="dash-money">${Y(t.sub_unsettled_profit)}</strong><small>元金を含まない利益のみ</small></div></div>
@@ -503,8 +508,8 @@ async function viewCases(view='#/cases'){
  page(view,`<div class="case-list"><h1>${menu.find(x=>x[0]===view)[1]}</h1>
  ${view==='#/cases'?'<div class="acts case-actions"><button onclick="newCaseForm(true)">LINE文章から登録</button><button class="s" onclick="newCaseForm(false)">手入力で登録</button><a class="list-trash" href="#/trash">削除ボックス</a></div><div id="nf"></div>':''}
  ${['#/cases','#/purchases'].includes(view)?purchasePdfTool()+purchaseForm(master.suppliers,null):''}
- <section class="card"><div class="filter-bar"><input id="case-search" type="search" aria-label="案件を検索" placeholder="管理番号・案件番号・案件名"><select id="case-filter" aria-label="進捗で絞り込む"><option value="">すべての進捗</option><option value="登録">登録</option><option value="仕入済">仕入済</option><option value="請求額確定">請求額確定</option><option value="入金済">入金済</option></select><label>並び順 <select id="case-sort" aria-label="案件の並び順"><option value="newest">管理番号の新しい順</option><option value="due_asc">納期の早い順</option><option value="due_desc">納期の遅い順</option><option value="progress_asc">進捗順（登録→入金済）</option><option value="progress_desc">進捗順（入金済→登録）</option></select></label></div>
- <div class="table-scroll"><table class="data-table compact-table${view==='#/cases'?' case-rates-table':''}"><thead><tr><th>案件</th><th>納期</th><th>進捗</th>${columns.map(([name])=>`<th>${name}</th>`).join('')}</tr></thead><tbody id="case-rows"></tbody></table></div>
+ <section class="card">${view==='#/cases'?'':`<div class="filter-bar"><input id="case-search" type="search" aria-label="案件を検索" placeholder="管理番号・案件番号・案件名"><select id="case-filter" aria-label="進捗で絞り込む"><option value="">すべての進捗</option><option value="登録">登録</option><option value="仕入済">仕入済</option><option value="請求額確定">請求額確定</option><option value="入金済">入金済</option></select><label>並び順 <select id="case-sort" aria-label="案件の並び順"><option value="newest">管理番号の新しい順</option><option value="due_asc">納期の早い順</option><option value="due_desc">納期の遅い順</option><option value="progress_asc">進捗順（登録→入金済）</option><option value="progress_desc">進捗順（入金済→登録）</option></select></label></div>`}
+ <div class="filter-bar"><label>利益精算状態 <select id="case-profit-filter"><option value="">すべて</option>${['未精算','精算予定','精算完了'].map(x=>`<option>${x}</option>`).join('')}</select></label><button class="s" onclick="openProfitList()">下請け別利益精算</button></div><div class="table-scroll"><table class="data-table compact-table${view==='#/cases'?' case-rates-table':''}"><thead><tr><th>案件</th>${view==='#/cases'?['due','progress'].map((key,i)=>`<th data-case-sort="${key}" aria-sort="none"><button type="button" class="case-sort-button" data-case-sort-key="${key}">${['納期','進捗'][i]}<span class="case-sort-indicator" aria-hidden="true">↕</span></button></th>`).join(''):'<th>納期</th><th>進捗</th>'}${columns.map(([name])=>`<th>${name}</th>`).join('')}</tr></thead><tbody id="case-rows"></tbody></table></div>
  <p id="no-cases" class="m" role="status" hidden>該当する案件はありません。</p><div class="pager" id="case-pager"></div></section></div>`);
  const renderRows=items=>items.map(x=>{
   const withRates=view==='#/cases', span=withRates?` rowspan="${caseListMobile.matches?1:2}"`:'';
@@ -514,16 +519,43 @@ async function viewCases(view='#/cases'){
   return `<tr${withRates?' class="case-schedule"':''}><td${span}><a href="#/case/${x.id}${tab}">${esc(x.mgmt_no)} ${esc(x.name)}</a>${x.case_no?`<br><span class="m">${esc(x.case_no)}</span>`:''}</td><td>${esc(x.due_date||'―')}</td><td><span class="t ${x.confirmed?'g':'w'}">${esc(x.progress)}</span>${view==='#/profit'&&!x.confirmed?'<br><span class="m">見込</span>':''}</td>${columns.map(([,render])=>`<td${span} class="amount">${render(x)}</td>`).join('')}</tr>${withRates?`<tr class="case-rate-row"><td colspan="2"><div class="case-rates" title="確定利益率＝（確定請求額−仕入額）÷仕入額×100（小数第2位まで表示）"><span>予定利益 <strong>${planned}</strong></span><span class="case-rate-arrow" aria-hidden="true">→</span><span>確定利益 <strong>${actual}</strong></span></div></td></tr>`:''}`;
  }).join('');
  const showCases=paginate($('#case-rows'),$('#case-pager'),8,renderRows,'案件一覧');
+ if(view==='#/cases'){
+  let order='newest';
+  try{order=localStorage.getItem('logibox-case-sort')||'newest'}catch{}
+  if(!['newest','due_asc','due_desc','progress_asc','progress_desc'].includes(order))order='newest';
+  function refreshCases(){
+   const matches=cases.filter(x=>!G('case-profit-filter')||x.profit_statuses.includes(G('case-profit-filter')));
+   showCases(sortCaseRows(matches,order));
+   $('#no-cases').hidden=matches.length>0;
+   document.querySelectorAll('[data-case-sort-key]').forEach(button=>{
+    const key=button.dataset.caseSortKey, active=order.startsWith(key+'_'), descending=order===key+'_desc';
+    button.closest('th').setAttribute('aria-sort',active?(descending?'descending':'ascending'):'none');
+    button.querySelector('.case-sort-indicator').textContent=active?(descending?'↓':'↑'):'↕';
+    const next=active&&!descending?'desc':'asc';
+    button.title=key==='due'?(next==='asc'?'納期の早い順に並び替え':'納期の遅い順に並び替え'):(next==='asc'?'進捗順（登録→入金済）に並び替え':'進捗順（入金済→登録）に並び替え');
+   });
+  }
+  document.querySelectorAll('[data-case-sort-key]').forEach(button=>button.onclick=()=>{
+   const key=button.dataset.caseSortKey;
+   order=order===key+'_asc'?key+'_desc':key+'_asc';
+   try{localStorage.setItem('logibox-case-sort',order)}catch{}
+   refreshCases();
+  });
+  $('#case-profit-filter').onchange=refreshCases;
+  refreshCases();
+  return;
+ }
  const normalize=value=>value.normalize('NFKC').toLowerCase();
  const searchable=cases.map(item=>({item,text:normalize([item.mgmt_no,item.case_no,item.name].filter(Boolean).join(' '))}));
  function filterCases(){
   const query=normalize(G('case-search').trim()), stage=G('case-filter');
-  const matches=searchable.filter(({item,text})=>(!stage||item.progress===stage)&&text.includes(query));
+  const matches=searchable.filter(({item,text})=>(!stage||item.progress===stage)&&(!G('case-profit-filter')||item.profit_statuses.includes(G('case-profit-filter')))&&text.includes(query));
   showCases(sortCaseRows(matches.map(({item})=>item),G('case-sort')));
   $('#no-cases').hidden=matches.length>0;
  }
  $('#case-search').oninput=filterCases;
  $('#case-filter').onchange=filterCases;
+ $('#case-profit-filter').onchange=filterCases;
  try{$('#case-sort').value=localStorage.getItem('logibox-case-sort')||'newest'}catch{}
  if(!$('#case-sort').value)$('#case-sort').value='newest';
  $('#case-sort').onchange=()=>{try{localStorage.setItem('logibox-case-sort',G('case-sort'))}catch{}filterCases()};
@@ -635,7 +667,7 @@ async function viewCase(id,tab='basic'){const request=++CASE_VIEW_REQUEST;const 
   return `<div class="card"><h2>${s?esc(s.settlement_no||'')+'　':''}下請け${slot}${s?' '+esc(s.sub_name):''}</h2><div class="g">${fld('下請け','s'+slot+'_id','',{sel:'<option value="">選択してください</option>'+opts(m.subs,s&&s.sub_id)}).replace('<select',`<select onchange="refreshFunding(${c.id},${slot})"`)}${fld('担当元金(税込・円)','s'+slot+'_pr',s?s.principal_tax_in:'',{num:1}).replace('<input',`<input oninput="fundingTotals(${slot})"`)}${fundingPanel(c.id,slot,s,CUR.funding[slot])}<details style="grid-column:1/-1"><summary>手数料・精算設定</summary><div class="g">${fld('手数料率(%)','s'+slot+'_fee',rate,{num:1})}<div class="f"><span>元金の扱い</span><span>販売委託型（固定）</span></div><input type="hidden" id="s${slot}_rec" value="${esc(s&&s.principal_received_date||'')}">${fld('精算予定日(空欄=納期の翌月15日)','s'+slot+'_set',s&&s.settle_date||'',{type:'date'})}</div></details></div>
   ${legacy?`<p class="purchase-warning">移行対象。保存済みの設定は「${esc(legacyTaxModes[s.tax_mode])}」です。</p>`:''}
  ${s?`<details><summary>利益・帳票の計算内訳</summary><div style="margin-top:10px">${row('下請け利益 = 元金 ×(予定利益率 − 手数料率)',Y(s.sub_profit),1)}${row('自社の手数料利益',Y(s.fee))}${row('確認済元金',Y(s.principal_confirmed))}${s.carry_reserved?row('他案件からの充当予定（現金入金は差引残額）',Y(s.carry_reserved)):''}${row('下請けへの振込額(充当なし)',Y(s.payout))}${row('元金請求書(税抜 + 消費税10%)',Y(s.principal_ex)+' + '+Y(s.principal_tax))}${row('月次精算の支払期限',esc(s.settle_date_auto||'納期を入力してください'))}</div></details>`:''}
-  ${trashed?'':`<div class="acts">${legacy?'':`<button onclick="saveSub(${c.id},${slot})">保存</button>`}${s?`<button class="d" onclick="delSub(${c.id},${slot})">この下請けを外す</button>`:''}</div>`}</div>`};
+  ${trashed?'':`<div class="acts">${legacy?'':`<button onclick="saveSub(${c.id},${slot})">保存</button>`}${s?`<button class="s" onclick="openProfit(${c.id},${s.sub_id})">利益精算・${esc(s.profit_settlement.status)}</button><button class="d" onclick="delSub(${c.id},${slot})">この下請けを外す</button><button class="d" type="button" onclick="openSubReset(${c.id},${slot})">充当解除・参加リセット</button>`:''}</div>`}</div>`};
  const h=v.haak;
  openCaseEditor(tab,`${esc(c.mgmt_no)} ${esc(c.name)} ${trashed?'<span class="t w">削除ボックス内</span>':''}`,`${over}
  <div class="card"><h2>計算の流れ</h2>${row('仕入額(税込)',Y(k.purchase_total))}${row('ハーク請求の見込(仕入 ×(1+'+c.planned_rate_pct+'%))',Y(k.planned_amount))}${row('ハーク請求額(使用中:'+(k.confirmed?'確定額':'見込')+')',Y(k.basis_amount))}${row('全体の利益',Y(k.total_profit),1)}${row('− 下請け利益(合計)',Y(k.sub_profit_total))}${row('= 自社の利益',Y(k.own_profit),1)}<div class="m">内訳:自社分 ${Y(k.own_base)} + 手数料 ${Y(k.fee_total)} + 予定を超えた差額 ${Y(k.over_planned)}</div></div>
@@ -648,6 +680,7 @@ async function viewCase(id,tab='basic'){const request=++CASE_VIEW_REQUEST;const 
  ${purchaseForm(m.suppliers,c.id)}`}</div>
  <p class="m">販売委託型はアプリの運用設定です。税務上の取扱いは別途確認してください。</p>
  ${subCard(1)}${subCard(2)}
+ ${(v.participation_resets||[]).length?`<div class="card"><h2>充当解除・案件参加リセット履歴</h2>${v.participation_resets.map(r=>`<p>下請け${r.slot} ${esc(r.sub_name)} ／ ${r.mode==='reset'?'充当解除・参加リセット':'充当のみ解除'} ／ ${esc(r.created_at)}<br>理由：${esc(r.reason)}</p>`).join('')}</div>`:''}
  <div class="card"><h2>案件の精算履歴</h2>${v.settlement_history.map(item=>`<div class="row"><a href="#/monthly?${item.period}">${esc(item.settlement_no||'')} ${esc(item.period)} ${esc(item.sub_name)}</a>${progressBadge(item.progress)}<span class="m">実際の支払日 ${esc(item.paid_at||'未登録')}</span><span>${Y(item.principal+item.sub_profit-item.carry_over)}</span></div>`).join('')||'<p class="m">精算記録はありません。</p>'}</div>
  <div class="card"><h2>ハークへの請求</h2><div class="g">${fld('ハークから連絡された確定額(税込・円)','h_amt',h.confirmed_amount_tax_in,{num:1,ph:'未連絡なら空欄(見込を使います)'})}${fld('請求日','h_bd',h.billing_date,{type:'date'})}${fld('支払期限','h_due',h.due_date,{type:'date'})}${fld('入金確認日','h_pd',h.paid_date,{type:'date'})}${fld('実入金累計額（税込・円）','h_actual',h.actual_paid_amount??(v.haak_progress.complete?h.confirmed_amount_tax_in:''),{num:1})}${fld('請求書に記載する内容','h_items',h.items_text)}${fld('請求書の備考','h_note',h.note)}</div><label class="f" style="flex-direction:row;align-items:center;margin-top:8px"><input type="checkbox" id="h_chk" style="width:auto;min-height:auto" ${h.confirmed_checked?'checked':''}>ハークから連絡された確定金額を確認済み</label>${trashed?'':`<div class="acts"><button onclick="saveHaak(${c.id})">保存</button></div>`}</div>
  <div class="card"><h2>請求書・領収書の発行</h2><p class="m">PDFを作成する場合だけ操作してください。ハーク請求の金額・日付の登録は「ハーク請求」タブの保存で完了しており、ここでの操作は不要です。領収書は入金確認後に発行してください。</p>
@@ -833,7 +866,7 @@ function showAttachment(id){
 function showIssuedDocument(id,history=false){
  const route=`/api/${history?'document-history':'documents'}/${id}`;
  return showDocumentPreview({
-  title:history?'発行済み書類の旧版PDF':'発行済み書類のPDF',url:route+'/preview',download:route+'/file',
+  title:history?'発行済み書類の旧版PDF':CUR.docs.find(d=>d.id===id)?.cancellation?'取消済み書類の原本PDF（送付用には使用できません）':'発行済み書類のPDF',url:route+'/preview',download:route+'/file',
  });
 }
 async function showDocumentPreview({title,url,pdf=true,download,closeLabel='閉じる',onReady}){
@@ -1103,6 +1136,39 @@ function saveP(cid,button){purchaseAction(async()=>{
 
 function delP(pid){if(confirm('この仕入を削除しますか?'))act(async()=>{await api('DELETE','/api/purchases/'+pid);await rf()},'削除しました')}
 function saveSub(cid,s){act(async()=>{await api('PUT',`/api/cases/${cid}/subs/${s}`,{sub_id:G(`s${s}_id`),principal_tax_in:G(`s${s}_pr`),fee_rate_pct:G(`s${s}_fee`),principal_received_date:G(`s${s}_rec`),settle_date:G(`s${s}_set`),...fundingValues(s)});await rf()},'保存しました')}
+function openSubReset(cid,slot){act(async()=>{
+ const dialog=openDocDialog('',`<h2 id="doc_dialog_title">充当解除・案件参加リセット</h2>
+ <label class="f">操作<select name="mode"><option value="reset">充当を解除し、案件参加もリセット</option><option value="allocations">充当だけ解除（案件参加を残す）</option></select></label>
+ <div data-plan></div><form><label class="f">解除・リセット理由（必須・500文字以内）<textarea name="reason" required maxlength="500" rows="3"></textarea></label>
+ <p class="purchase-warning" role="alert"></p><div class="acts"><button class="d" type="submit" disabled>理由を記録して実行</button><button class="s" type="button" data-close>キャンセル</button></div></form>`);
+ const select=dialog.querySelector('[name=mode]'),form=dialog.querySelector('form'),submit=form.querySelector('[type=submit]'),summary=dialog.querySelector('[data-plan]'),error=form.querySelector('[role=alert]');
+ const route=`/api/cases/${cid}/subs/${slot}/reset`;
+ let plan=null,loading=0;
+ async function load(){
+  const request=++loading;plan=null;submit.disabled=true;summary.textContent='確認中…';error.textContent='';
+  try{
+   const result=await api('GET',route+'?mode='+select.value);
+   if(request!==loading||!dialog.open)return;
+   plan=result;
+   summary.innerHTML=`<p>対象：${esc(plan.sub_name)} ／ 解除する充当：<b>${Y(plan.allocated)}</b></p><p>解除した金額は充当元の利用可能額へ戻ります。</p>`+
+    (plan.invoices.length?`<p>次の元金請求書も取消済みにします。原本PDFと旧版は履歴に残ります。</p><ul>${plan.invoices.map(d=>`<li>${esc(d.number)}${d.sent_date?' ／ 送付済み '+esc(d.sent_date):''}</li>`).join('')}</ul>`:'')+
+    (select.value==='reset'?'<p>案件参加と未実行の入金予定も取り消します。正しい案件へは改めて登録してください。</p>':'<p>案件参加と入金予定は残ります。必要に応じて請求書を新規作成してください。</p>')+
+    (plan.reasons.length?`<ul class="purchase-warning">${plan.reasons.map(r=>`<li>${esc(r)}</li>`).join('')}</ul>`:'');
+   submit.disabled=!plan.can_reset;
+  }catch(e){if(request===loading){summary.textContent='';error.textContent=e.message}}
+ }
+ select.onchange=load;dialog.querySelector('[data-close]').onclick=()=>dialog.close();
+ form.onsubmit=async event=>{
+  event.preventDefault();if(!plan||!plan.can_reset||submit.disabled)return;
+  const reason=form.querySelector('[name=reason]').value.trim();
+  if(!reason){error.textContent='理由を入力してください';return}
+  if(!confirm('表示した充当と元金請求書を取り消します。'+(select.value==='reset'?'案件参加もリセットします。':'')+'実行しますか？'))return;
+  submit.disabled=true;select.disabled=true;error.textContent='';
+  try{await api('POST',route,{mode:select.value,token:plan.token,reason});dialog.close();await rf();toast('理由を記録して充当を解除しました')}
+  catch(e){select.disabled=false;await load();error.textContent=e.message}
+ };
+ await load();
+ })}
 function delSub(cid,s){if(confirm('この下請けを案件から外しますか?'))act(async()=>{await api('DELETE',`/api/cases/${cid}/subs/${s}`);await rf()},'外しました')}
 function saveHaak(cid){act(async()=>{await api('PUT',`/api/cases/${cid}/haak`,{confirmed_amount_tax_in:G('h_amt'),billing_date:G('h_bd'),due_date:G('h_due'),paid_date:G('h_pd'),actual_paid_amount:G('h_actual'),require_actual_paid_amount:true,items_text:G('h_items'),note:G('h_note'),confirmed_checked:$('#h_chk').checked});await rf()},'保存しました')}
 function invalidateDocumentPreview(){
@@ -1157,7 +1223,8 @@ function showDocumentHistory(id){act(async()=>{
  $('#doc_extra').innerHTML=`<div class="card"><h2>発行履歴 ${esc(doc.snapshot.doc_no)}</h2>
  ${history.map(x=>`<div class="row">第${x.revision}版　${esc(x.saved_at)}　${Y(x.amount_tax_in)}${x.sent_date?'　送付 '+esc(x.sent_date):''} <button class="s" type="button" onclick="showIssuedDocument(${x.id},true)">旧版PDFを表示</button></div>`).join('')||'<p class="m">旧版はありません。</p>'}
  <p class="m">再発行前のPDFを自動的に履歴へ保存します。送付済みの場合は再確認が必要です。</p>
- ${CUR.v.case.deleted_at?'':`<div class="acts"><button class="s" onclick="openDocumentEdit(${id})">編集・再発行</button></div>
+ ${doc.cancellation?`<p class="purchase-warning">取消済み：${esc(doc.cancellation.reason)} ／ ${esc(doc.cancellation.cancelled_at)}</p>`:''}
+ ${CUR.v.case.deleted_at||doc.cancellation?'':`<div class="acts"><button class="s" onclick="openDocumentEdit(${id})">編集・再発行</button></div>
  <div class="g">${fld('送付日','doc_sent_date',doc.sent_date,{type:'date'})}<button class="s" onclick="saveDocumentSent(${id})">送付日を保存</button></div>`}</div>`;
  $('#doc_extra').scrollIntoView({block:'nearest'});
  })}
@@ -1166,6 +1233,7 @@ function saveDocumentSent(id){
 }
 function openDocumentEdit(id){
  const doc=CUR.docs.find(x=>x.id===id), saved=doc.snapshot;
+ if(doc.cancellation){toast('取消済み書類です。新しい請求書を作成してください',true);return}
  const field=(label,key,options)=>{
   const template=document.createElement('template');
   template.innerHTML=fld(label,'edit_'+key,saved[key],options);
@@ -1319,7 +1387,7 @@ function arrangeSettings(){
  const pager=document.createElement('div');pager.className='pager';
  list.append(table,pager);
  card.insertBefore(list,editor);
- const subRows=items=>items.map(sub=>`<tr><td>${esc(sub.name)}</td><td>${esc(sub.invoice_no||'未入力')}</td><td>${esc(sub.address||'未入力')}</td><td>${esc(sub.phone||'未入力')}</td><td><button class="s" onclick="editSub(${sub.id})">会社情報を編集</button></td></tr>`).join('');
+ const subRows=items=>items.map(sub=>`<tr><td>${esc(sub.name)}</td><td>${esc(sub.invoice_no||'未入力')}</td><td>${esc(sub.address||'未入力')}</td><td>${esc(sub.phone||'未入力')}</td><td><button class="s" onclick="openProfitList(${sub.id})">利益精算</button> <button class="s" onclick="editSub(${sub.id})">会社情報を編集</button></td></tr>`).join('');
  paginate(table.querySelector('tbody'),pager,6,subRows,'下請け登録')(window.SUBS);
  const add=document.createElement('button');
  add.className='s';add.textContent='下請けを追加';

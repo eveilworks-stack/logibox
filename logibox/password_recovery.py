@@ -58,8 +58,8 @@ def connect_existing(path):
 def inspect_database(connection):
     if connection.execute('PRAGMA quick_check').fetchone()[0] != 'ok':
         raise ValueError('DBの整合性を確認できませんでした。変更せずに中止します。')
-    if connection.execute('PRAGMA user_version').fetchone()[0] not in (6, 7, 8, 9, 10, 11, 12):
-        raise ValueError('対応するLOGIBOXのDB（スキーマ6〜12）を選んでください。DBの移行や初期化は行いません。')
+    if connection.execute('PRAGMA user_version').fetchone()[0] not in (6, 7, 8, 9, 10, 11, 12, 13):
+        raise ValueError('対応するLOGIBOXのDB（スキーマ6〜13）を選んでください。DBの移行や初期化は行いません。')
     required = {'settings': {'k', 'v'}, 'cases': {'id', 'name', 'mgmt_no'},
                 'company': {'id', 'name'}, 'issued_documents': {'id'}}
     for table, columns in required.items():
