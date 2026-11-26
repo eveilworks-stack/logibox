@@ -74,6 +74,7 @@ function documentFields(){
  for(const id of ['doc_received','doc_amount','doc_method'])document.getElementById(id).closest('.f').hidden=type!=='receipt';
  $('#doc_sub').closest('.f').hidden=type==='haak_invoice';
  $('#doc_due').closest('.f').hidden=type==='receipt';
+ $('#doc_bank').closest('.f').hidden=type==='receipt';
  $('#document_item_names').closest('.f').hidden=type!=='principal_invoice';
  refreshPrincipalInvoiceSummary();
 }
@@ -191,7 +192,7 @@ function openSettlement(id){
  <label><input name="confirm_amount" type="checkbox" style="width:auto;min-height:auto">手入力額を原本と照合済み</label>
  <div class="acts"><button>登録して金額を照合</button></div></form></section>`:''}
  ${s.status==='mismatch'?'<p role="alert">請求書の金額が依頼額と異なります。原本を確認し、訂正版のPDFを登録してください。金額一致までは支払済みにできません。</p>':''}
- ${s.invoices.length?`<section class="card"><h3>受領PDFの履歴</h3><p class="m" style="overflow-wrap:anywhere">PDFコピー先：${esc(s.archive_directory)}（直下に現在版を保存。旧版はアプリ内の履歴で保管）</p>${s.invoices.map((invoice,index)=>`<div class="row"><button class="s" onclick="showSettlementInvoice(${invoice.id})">${esc(invoice.original_name||'受領PDF')}</button><span>${esc(invoice.received_date||'')} ${esc(invoice.invoice_no||'')}　${Y(invoice.amount_tax_in)}${index===0?'（最新版）':''}</span></div><details><summary>アプリ内の原本保存パス</summary><p style="overflow-wrap:anywhere">${esc(invoice.stored_path)}</p></details>`).join('')}</section>`:''}
+ ${s.invoices.length?`<section class="card"><h3>受領PDFの履歴</h3><p class="m" style="overflow-wrap:anywhere">PDFコピー先：${esc(s.archive_directory)}（月次精算／対象月に現在版を保存。各案件の証憑一覧から参照。旧版はアプリ内の履歴で保管）</p>${s.invoices.map((invoice,index)=>`<div class="row"><button class="s" onclick="showSettlementInvoice(${invoice.id})">${esc(invoice.original_name||'受領PDF')}</button><span>${esc(invoice.received_date||'')} ${esc(invoice.invoice_no||'')}　${Y(invoice.amount_tax_in)}${index===0?'（最新版）':''}</span></div><details><summary>アプリ内の原本保存パス</summary><p style="overflow-wrap:anywhere">${esc(invoice.stored_path)}</p></details>`).join('')}</section>`:''}
  ${pay?`<section class="card"><h3>支払・充当完了</h3>${fld('完了日','settlement-paid',localToday(),{type:'date'})}<div class="acts"><button onclick="changeSettlement(${s.id},'paid')">支払済みにする</button></div></section>`:''}
  </div>`);
  dialog.setAttribute('aria-labelledby','settlement-title');
@@ -307,7 +308,7 @@ async function viewExports(){
  <div class="acts"><button onclick="downloadReport('balances')">期末残高CSV</button></div></section>
  <section class="card export-evidence"><h2>案件の証憑PDF</h2>
  ${fld('案件','evidence-case','',{sel:'<option value="">案件を選択</option>'+opts(cases.map(x=>({...x,name:x.mgmt_no+' '+x.name})))})}
- <div class="acts"><button class="s" onclick="openEvidenceCase()">発行済み帳票を確認</button><button onclick="downloadEvidence()">証憑PDF一式をダウンロード</button></div></section></div></div>`);
+ <div class="acts"><button class="s" onclick="openEvidenceCase()">発行済み帳票を確認</button><button onclick="downloadEvidenceBundle()">案件証憑一式PDF</button><button class="s" onclick="downloadEvidence()">原本・履歴をZIPで保存</button></div></section></div></div>`);
 }
 function downloadReport(kind){
  const period=G('export-month')||G('export-year').trim();
@@ -320,6 +321,11 @@ function downloadReport(kind){
 function openEvidenceCase(){
  const id=G('evidence-case');
  if(id)location.hash='#/case/'+id+'/docs';
+ else toast('案件を選択してください',true);
+}
+function downloadEvidenceBundle(){
+ const id=G('evidence-case');
+ if(id)downloadFile('/api/cases/'+id+'/evidence-bundle');
  else toast('案件を選択してください',true);
 }
 function downloadEvidence(){

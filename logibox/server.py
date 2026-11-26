@@ -2,6 +2,7 @@
 """LOGIBOX(フェーズ1)。Python標準ライブラリ+SQLite。既定は自分のPC内(127.0.0.1)だけで動く。"""
 import argparse, base64, csv, datetime, hashlib, io, json, os, re, secrets, sqlite3, tempfile, threading, time, unicodedata, webbrowser, zipfile
 from contextlib import closing
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 import calc
@@ -814,9 +815,33 @@ def r_haak_put(c, b, q, cid):
     return dict(ok=True)
 
 
+BANK_FIELDS = ('bank_branch', 'bank_account', 'bank_holder')
+BANK_SNAPSHOT_FIELDS = ('bank_account_id', 'issuer_bank_info', 'issuer_bank_branch',
+                        'issuer_bank_account', 'issuer_bank_holder')
+
+
+def company_bank_accounts(c):
+    company = dict(c.execute('SELECT * FROM company WHERE id=1').fetchone())
+    first = dict(id='1', label='口座1（標準）', bank_info=company['bank_info'],
+                 **{key: company[key] for key in BANK_FIELDS})
+    extra = json.loads(getset(c, 'company_extra_bank_accounts') or '[]')
+    return [first] + extra
+
+
+def apply_document_bank(c, data, account_id):
+    account = next((a for a in company_bank_accounts(c) if a['id'] == str(account_id)), None)
+    if not account or (account['id'] != '1' and not all(account.get(k) for k in BANK_FIELDS)):
+        raise Err('振込先口座を設定から登録し、選択してください')
+    data['bank_account_id'] = account['id']
+    data['issuer_bank_info'] = account.get('bank_info') or ' '.join(account.get(k) or '' for k in BANK_FIELDS).strip()
+    for key in BANK_FIELDS:
+        data['issuer_' + key] = account.get(key)
+
+
 def r_master(c, b, q):
     company = dict(c.execute('SELECT * FROM company WHERE id=1').fetchone())
     seal = c.execute("SELECT v FROM settings WHERE k='company_seal_png'").fetchone()
+    company['bank_accounts'] = company_bank_accounts(c)
     company['seal_png'] = seal['v'] if seal else None
     company['bundled_seal_available'] = os.path.isfile(SEAL_SEED)
     return dict(company=company,
@@ -883,6 +908,23 @@ def r_company_put(c, b, q):
         b = dict(b, bank_info=combined or b.get('bank_info'))
     c.execute('UPDATE company SET name=?,address=?,invoice_no=?,bank_info=? WHERE id=1',
               (txt(b, 'name', '会社名', True, 100) , txt(b, 'address', '住所'), txt(b, 'invoice_no', '登録番号', n=20), txt(b, 'bank_info', '振込先', n=300)))
+    if 'extra_bank_accounts' in b:
+        entries = b['extra_bank_accounts']
+        if not isinstance(entries, list) or len(entries) > 2:
+            raise Err('追加口座は2件まで登録できます')
+        saved = []
+        for i, entry in enumerate(entries, 2):
+            if not isinstance(entry, dict):
+                raise Err('口座情報が正しくありません')
+            account = {key: txt(entry, key, label, n=limit)
+                       for key, (label, limit) in COMPANY_DETAILS.items() if key in BANK_FIELDS}
+            if not any(account.values()):
+                continue
+            if not all(account.values()):
+                raise Err('追加口座の銀行・支店、口座種別・番号、口座名義をすべて入力してください')
+            account.update(id=str(i), label=txt(entry, 'label', '口座の表示名', n=50) or f'口座{i}')
+            saved.append(account)
+        setset(c, 'company_extra_bank_accounts', json.dumps(saved, ensure_ascii=False))
     return dict(ok=True)
 
 
@@ -1311,6 +1353,8 @@ def document_payload(c, b, case_id, doc_type, sub_id=None, existing=None):
               carried_amount=carry,paid_amount=paid,
               payment_terms=txt(b,'payment_terms','支払条件',n=100) or '指定期日までにお振込み',
               valid_until=dt(b,'valid_until','有効期限'))
+    if not existing and doc_type != 'receipt':
+        apply_document_bank(c, data, b.get('bank_account_id') or '1')
     return data
 
 def _doc_no(c,case_id,doc_type,sub_id):
@@ -1453,6 +1497,11 @@ def edited_document(c, r, b):
             rows = funding_ledger.recorded_allocation_consents(c,prev.get('allocations', []))
             funding_ledger.validate_invoice_date(doc['issued_date'], rows)
             doc['allocations'] = rows
+    if r['doc_type'] != 'receipt':
+        for key in BANK_SNAPSHOT_FIELDS:
+            if key in prev: doc[key] = prev[key]
+        if b.get('bank_account_id') not in (None, '', 'keep'):
+            apply_document_bank(c, doc, b['bank_account_id'])
     doc['doc_no']=prev['doc_no']
     return doc
 
@@ -2169,6 +2218,19 @@ def r_export(c, b, q, report):
     return csv_file(report, ('期末日', '区分', '案件管理番号', '案件名', '取引先', '金額', '精算管理番号'), rows)
 
 
+def r_evidence_bundle(c, b, q, cid):
+    case = case_view(c, int(cid))['case']
+    root = pdf_archive_root(c)
+    pdf_archive.sync(c, FILES, DOCS, root)
+    with open(os.path.join(os.path.dirname(DOCS), 'pdf_export_manifest.json'), encoding='utf-8') as source:
+        state = json.load(source)
+    item = state['roots'][str(Path(root).resolve())][f'case:{int(cid)}:1']
+    path = pdf_archive.checked_target(Path(root), item['name'])
+    if pdf_archive.digest(path) != item['digest']:
+        raise Err('証憑一式PDFが変更されました。もう一度作成してください', 409)
+    return 'file', path.read_bytes(), f'evidence-{case["mgmt_no"]}.pdf', 'application/pdf'
+
+
 def r_evidence(c, b, q, cid):
     case = case_view(c, int(cid))['case']
     stream = io.BytesIO()
@@ -2207,6 +2269,7 @@ ROUTES = [
     ('PUT', r'/api/settings/pdf-archive', r_pdf_archive_settings_put),
     ('GET', r'/api/export/(transactions|cashflow|profit|settlements|balances)', r_export),
     ('GET', r'/api/cases/(\d+)/evidence', r_evidence),
+    ('GET', r'/api/cases/(\d+)/evidence-bundle', r_evidence_bundle),
     ('GET', r'/api/monthly', r_monthly), ('POST', r'/api/settlements', r_settlement_create),
     ('DELETE', r'/api/settlements/(\d+)', r_settlement_delete),
     ('PUT', r'/api/settlements/(\d+)/lines/(\d+)', r_carry),

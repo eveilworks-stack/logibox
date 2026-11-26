@@ -1,4 +1,4 @@
-"""LOGIBOX PDFには名前を整えた現在版の読込PDFと正式発行PDFを置く。"""
+"""案件別の証憑フォルダと一覧・一式PDFを安全に同期する。"""
 import datetime
 import hashlib
 import json
@@ -9,6 +9,7 @@ import secrets
 import tempfile
 import threading
 import zipfile
+import evidence_documents
 
 LOCK = threading.Lock()
 LABELS = {'principal_invoice': '元金請求書', 'haak_invoice': 'ハーク請求書', 'receipt': '領収書'}
@@ -31,6 +32,28 @@ def day(value):
 
 def case_name(row):
     return f"{safe(row['case_no'] or 'SP00000')},{day(row['start_date'])}-{day(row['due_date'])},{safe(row['mgmt_no'])}"
+
+
+def case_folder(row):
+    date = row['due_date'] or row['start_date'] or ''
+    year = date[:4] + '年' if re.match(r'^\d{4}-', date) else '年度未設定'
+    return str(Path(year) / (safe(row['mgmt_no']) + '_' + safe(row['case_no'] or '案件番号未登録')[:24]
+                            + '_' + safe(row['name'])[:28]))
+
+
+def checked_target(root, name):
+    rel = Path(name)
+    if (not name or rel.is_absolute() or '..' in rel.parts or '\\' in name
+            or any(':' in part for part in rel.parts)):
+        raise ValueError('PDFコピーの管理ファイル名を確認してください')
+    path = root / rel
+    for parent in [path, *path.parents]:
+        if parent == root: break
+        if parent.is_symlink() or (hasattr(parent, 'is_junction') and parent.is_junction()):
+            raise ValueError('証憑保存先に外部リンクがあります')
+    if not inside(path, root):
+        raise ValueError('証憑保存先がフォルダ外を指しています')
+    return path
 
 
 def digest(path):
@@ -76,7 +99,7 @@ def sync(c, files, docs, root):
             if Path(stored).name != stored or '/' in stored or '\\' in stored:
                 raise ValueError('PDFの原本保存先情報を確認してください')
             path = folder / stored
-            if path.suffix.lower() != '.pdf':return None
+            if path.suffix.lower() not in ('.pdf','.png','.jpg','.jpeg'):return None
             if not path.is_file():
                 if required:raise ValueError('PDF原本が見つかりません：' + stored)
                 return None
@@ -84,27 +107,40 @@ def sync(c, files, docs, root):
             known.add(value)
             return path, value
 
-        def add(key, folder, stored, stem):
+        groups = {cid: [] for cid in cases}
+        references = {cid: [] for cid in cases}
+        def add(key, folder, stored, stem, cid=None, label=None):
             found = source(folder, stored)
-            if found:wanted.append(dict(key=key, source=found[0], digest=found[1], stem=stem))
+            if found:
+                item = dict(key=key, source=found[0], digest=found[1], stem=stem,
+                            suffix=found[0].suffix.lower(), label=label or Path(stem).name)
+                wanted.append(item)
+                if cid is not None: groups[cid].append(item)
+                return item
 
-        for row in c.execute("SELECT * FROM attachments WHERE mime='application/pdf' ORDER BY id"):
+        for row in c.execute('SELECT * FROM attachments ORDER BY id'):
+            category = '01_仕入' if row['kind'] != 'other' else '04_その他'
+            label = ATTACHMENT_LABELS[row['kind']] + '_' + safe(Path(row['original_name']).stem)[:45]
             add(f"attachment:{row['id']}", files, row['stored_name'],
-                case_name(cases[row['case_id']]) + '_' + ATTACHMENT_LABELS[row['kind']])
+                str(Path(case_folder(cases[row['case_id']])) / category / label), row['case_id'], label)
         for row in c.execute('SELECT * FROM issued_documents ORDER BY id'):
             snapshot = json.loads(row['snapshot_json'])
             number = snapshot.get('doc_no')
-            stem = safe(number.removesuffix('.pdf')) if isinstance(number, str) and number else (
-                case_name(cases[row['case_id']]) + '_' + LABELS[row['doc_type']]
-                + (f"_下請け{row['sub_id']}" if row['sub_id'] else ''))
-            add(f"issued:{row['id']}", docs, row['file'], stem)
+            label = LABELS[row['doc_type']] + '_' + safe(snapshot.get('recipient') or number or row['id'])[:28]
+            stem = (safe(number.removesuffix('.pdf'))[:36] + '_' + label if isinstance(number, str) and number else label)
+            category = '03_ハーク' if row['doc_type']=='haak_invoice' else '02_下請け'
+            add(f"issued:{row['id']}", docs, row['file'],
+                str(Path(case_folder(cases[row['case_id']])) / category / stem), row['case_id'], label)
         for row in c.execute('''SELECT i.*,s.period,sc.name AS sub_name FROM sub_invoices i
                                 JOIN settlements s ON s.id=i.settlement_id
                                 JOIN subcontractors sc ON sc.id=s.sub_id
                                 WHERE i.id=(SELECT MAX(n.id) FROM sub_invoices n WHERE n.settlement_id=i.settlement_id)
                                 ORDER BY i.id'''):
-            add(f"received:{row['settlement_id']}", docs, row['file'],
-                f"{row['period']}_{safe(row['sub_name'])}_受領請求書")
+            item = add(f"received:{row['settlement_id']}", docs, row['file'],
+                       str(Path('月次精算') / safe(row['period']) / (safe(row['sub_name'])+'_受領請求書')))
+            if item:
+                for line in c.execute('SELECT case_id FROM settlement_lines WHERE settlement_id=?', (row['settlement_id'],)):
+                    if line['case_id'] in references: references[line['case_id']].append(item)
         # 旧版の原本は保持し、旧形式の副本を識別するためだけに参照する。
         for table, field, folder in [('attachment_revisions', 'stored_name', files),
                                      ('issued_document_history', 'file', docs), ('sub_invoices', 'file', docs)]:
@@ -114,15 +150,16 @@ def sync(c, files, docs, root):
         def owned(path):
             if not path.is_file() or path.is_symlink() or not inside(path, root):return False
             value = digest(path)
-            return any(item.get('name') == path.name and item.get('digest') == value for item in previous.values())
+            return any(item.get('name') == path.relative_to(root).as_posix() and item.get('digest') == value for item in previous.values())
 
         assigned, current, replaced = set(), {}, []
-        for item in wanted:
+        def assign(item):
             index = 1
             while True:
-                name = item['stem'] + (f'_{index}' if index > 1 else '') + '.pdf'
-                target = root / name
-                if name.casefold() not in assigned and inside(target, root) and not target.is_symlink():
+                name = item['stem'] + (f'_{index}' if index > 1 else '') + item.get('suffix', '.pdf')
+                name = Path(name).as_posix()
+                target = checked_target(root, name)
+                if name.casefold() not in assigned:
                     if not target.exists() or (target.is_file() and (digest(target) == item['digest'] or owned(target))):break
                 index += 1
             assigned.add(name.casefold())
@@ -131,13 +168,36 @@ def sync(c, files, docs, root):
             current[item['key']] = dict(name=name, digest=item['digest'])
             if item['previous_digest'] and item['previous_digest'] != item['digest']:replaced.append(target)
 
+        for item in wanted: assign(item)
+        for cid, case in cases.items():
+            folder = Path(case_folder(case))
+            entries = sorted(groups[cid], key=lambda item: item['target'].relative_to(root).as_posix())
+            for entry in entries:
+                entry['relative'] = entry['target'].relative_to(root/folder).as_posix()
+            refs = [os.path.relpath(item['target'], root/folder).replace(os.sep, '/') for item in references[cid]]
+            # Covers contain only stable case metadata and current-document contents.
+            signature = hashlib.sha256(json.dumps([dict(case),[(x['relative'],x['digest'],x['label']) for x in entries],refs],
+                                        ensure_ascii=False, sort_keys=True).encode()).hexdigest()
+            outputs = None
+            for i, name in enumerate(('00_証憑一覧', '案件証憑一式')):
+                key = f"case:{cid}:{i}"
+                old = previous.get(key, {})
+                old_path = checked_target(root, old['name']) if old.get('name') else None
+                if old.get('input') == signature and old_path and old_path.is_file() and digest(old_path)==old.get('digest'):
+                    raw = old_path.read_bytes()
+                else:
+                    if outputs is None: outputs = evidence_documents.create(case, entries, refs)
+                    raw = outputs[i]
+                item = dict(key=key,raw=raw,digest=hashlib.sha256(raw).hexdigest(),stem=str(folder/name))
+                assign(item)
+                current[key]['input'] = signature
+                wanted.append(item)
+
         remove = []
         final_names = {item['name'].casefold() for item in current.values()}
         for item in previous.values():
             name = item.get('name', '')
-            if not name or Path(name).name != name or '/' in name or '\\' in name:
-                raise ValueError('PDFコピーの管理ファイル名を確認してください')
-            path = root / name
+            path = checked_target(root, name)
             if name.casefold() not in final_names and owned(path):remove.append(path)
         # 旧自動出力の構造・ファイル名・原本の内容がすべて一致する副本だけを移行する。
         for directory, dirs, names in os.walk(root, followlinks=False):
@@ -171,9 +231,11 @@ def sync(c, files, docs, root):
             if not target.exists() or digest(target) != item['digest']:
                 if target.exists() and digest(target) != item['previous_digest']:
                     raise ValueError('保存先のPDFが処理中に変更されました。もう一度保存してください')
-                raw = item['source'].read_bytes()
+                raw = item['raw'] if 'raw' in item else item['source'].read_bytes()
                 if hashlib.sha256(raw).hexdigest() != item['digest']:
                     raise ValueError('PDF原本が処理中に変更されました。もう一度保存してください')
+                checked_target(root, target.relative_to(root).as_posix())
+                target.parent.mkdir(parents=True, exist_ok=True)
                 atomic_write(target, raw)
                 copied += 1
         for path in removed_paths:
@@ -185,6 +247,7 @@ def sync(c, files, docs, root):
                 path = case_dir / kind
                 if path.is_dir() and inside(path, root) and not path.is_symlink() and not any(path.iterdir()):path.rmdir()
             if inside(case_dir, root) and not any(case_dir.iterdir()):case_dir.rmdir()
+        state['version'] = 2
         state['roots'][str(root.resolve())] = current
         atomic_write(manifest_file, json.dumps(state, ensure_ascii=False, indent=2).encode('utf-8'))
         return copied

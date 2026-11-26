@@ -138,12 +138,14 @@ class WorkflowTests(unittest.TestCase):
         self.c.commit()
         root = Path(self.s.DBP).parent / 'LOGIBOX PDF'
         self.s.sync_pdf_archive(self.c)
-        copies = list(root.rglob('*.pdf'))
+        copies = list(root.rglob('04_その他/*.pdf'))
         self.assertEqual(len(copies), 1)
-        self.assertTrue(copies[0].name.startswith('SP00000,××／××-11／20,'))
+        self.assertEqual(copies[0].name, '添付書類_original.pdf')
+        self.assertIn('コピー確認', copies[0].parent.parent.name)
+        self.assertTrue((copies[0].parent.parent/'案件証憑一式.pdf').exists())
         self.assertEqual(copies[0].read_bytes(), raw)
         self.s.sync_pdf_archive(self.c)
-        self.assertEqual(len(list(root.rglob('*.pdf'))), 1)
+        self.assertEqual(len(list(root.rglob('*.pdf'))), 3)
         self.assertEqual(Path(self.s.FILES, 'test.pdf').read_bytes(), raw)
 
     def test_sub_details_preserve_fee_and_legacy_bank(self):

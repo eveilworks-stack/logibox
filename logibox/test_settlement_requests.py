@@ -141,9 +141,11 @@ class SettlementRequestTests(unittest.TestCase):
         directory = Path(self.s.DBP).parent / 'logibox連携'
         result = self.call('r_pdf_archive_settings_put', {'directory': str(directory)})
         self.assertIsNone(result['error'])
-        copies = list(directory.rglob('*.pdf'))
+        copies = list((directory/'月次精算').rglob('*.pdf'))
+        self.assertEqual(len(list(directory.rglob('案件証憑一式.pdf'))), 2)
         self.assertEqual(len(copies), 1)
-        self.assertEqual(copies[0].name, '2020-11_下請けA_受領請求書.pdf')
+        self.assertEqual(copies[0].name, '下請けA_受領請求書.pdf')
+        self.assertEqual(copies[0].parent.name, '2020-11')
         self.assertEqual(copies[0].read_bytes(), Path(s['invoices'][0]['stored_path']).read_bytes())
         self.call('r_settlement_status', {'status': 'paid', 'paid_at': self.today}, s['id'])
         self.assertEqual(self.call('r_case_get', None, target)['subs'][0]['principal_confirmed'], 2000000)
@@ -155,7 +157,8 @@ class SettlementRequestTests(unittest.TestCase):
             self.assertTrue(result['environment_override'])
             self.assertEqual(result['effective_directory'], str(override))
             self.s.sync_pdf_archive(self.c)
-            self.assertEqual(len(list(override.rglob('*.pdf'))), 1)
+            self.assertEqual(len(list((override/'月次精算').rglob('*.pdf'))), 1)
+            self.assertEqual(len(list(override.rglob('案件証憑一式.pdf'))), 2)
 
     def test_archive_failure_visible_and_retry_keeps_original(self):
         s, _, _ = self.prepare()
@@ -170,7 +173,8 @@ class SettlementRequestTests(unittest.TestCase):
             self.call('r_pdf_archive_settings_put', {'directory': '../relative'})
         result = self.call('r_pdf_archive_settings_put', {'directory': ''})
         self.assertIsNone(result['error'])
-        self.assertEqual(len(list(Path(result['effective_directory']).rglob('*.pdf'))), 1)
+        self.assertEqual(len(list((Path(result['effective_directory'])/'月次精算').rglob('*.pdf'))), 1)
+        self.assertEqual(len(list(Path(result['effective_directory']).rglob('案件証憑一式.pdf'))), 2)
 
     def test_authenticated_http_template_preview_and_settings(self):
         s, _, _ = self.prepare()
@@ -190,12 +194,22 @@ class SettlementRequestTests(unittest.TestCase):
                     req(f"/api/settlements/{s['id']}/invoice-template")
                 self.assertEqual(exc.exception.code, 401)
                 exc.exception.close()
+                cid = s['lines'][0]['case_id']
+                with self.assertRaises(HTTPError) as unauthenticated:
+                    req(f'/api/cases/{cid}/evidence-bundle')
+                self.assertEqual(unauthenticated.exception.code, 401)
+                unauthenticated.exception.close()
                 with req('/api/login', {'password': 'test-passphrase'}) as login:
                     cookie = login.headers['Set-Cookie'].split(';')[0]
                 with req(f"/api/settlements/{s['id']}/invoice-template?preview=1", cookie=cookie) as pdf:
                     self.assertEqual(pdf.headers['Content-Type'], 'application/pdf')
                     self.assertTrue(pdf.headers['Content-Disposition'].startswith('inline;'))
                     self.assertTrue(pdf.read().startswith(b'%PDF-'))
+                with req(f'/api/cases/{cid}/evidence-bundle', cookie=cookie) as bundle:
+                    self.assertEqual(bundle.headers['Content-Type'], 'application/pdf')
+                    self.assertTrue(bundle.headers['Content-Disposition'].startswith('attachment;'))
+                    with fitz.open(stream=bundle.read(), filetype='pdf') as document:
+                        self.assertIn('案件証憑一覧', ''.join(page.get_text() for page in document))
                 with req('/api/settings/pdf-archive', cookie=cookie) as config:
                     self.assertIn('effective_directory', json.load(config))
                 with req(f"/api/settlements/{s['id']}/invoice-template/preview?info=1", cookie=cookie) as info:
