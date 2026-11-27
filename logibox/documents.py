@@ -14,6 +14,14 @@ import company_seal
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 TEMPLATES = os.path.join(BASE, 'document_templates')
+
+
+def template_path(name):
+    # Restored originals stay in data; the installed program and fixed layouts are untouched.
+    from server import DBP
+    candidate = os.path.join(os.path.dirname(DBP), 'templates', name)
+    return candidate if os.path.isfile(candidate) else os.path.join(TEMPLATES, name)
+
 FONT = 'BIZUDPGothic'
 embedded_font = TTFont(FONT, os.path.join(BASE, 'fonts', 'BIZUDPGothic-Regular.ttf'))
 pdfmetrics.registerFont(embedded_font)
@@ -117,7 +125,7 @@ def _overlay(background, draw, continuation=()):
         paint(can)
         can.showPage()
     can.save()
-    with fitz.open(os.path.join(TEMPLATES, background)) as template, \
+    with fitz.open(template_path(background)) as template, \
             fitz.open(stream=stream.getvalue(), filetype='pdf') as added:
         for _ in range(len(template), len(added)):
             template.fullcopy_page(0)
@@ -312,7 +320,7 @@ def principal_invoice(d):
 
 def haak_invoice(d):
     total=int(d['amount_tax_in']); ex,tax=calc.tax_split(total)
-    with fitz.open(os.path.join(TEMPLATES,'haak_invoice.pdf')) as background:
+    with fitz.open(template_path('haak_invoice.pdf')) as background:
         fixed_recipient = bool(background[0].get_text(clip=fitz.Rect(40,120,330,160)).strip())
     products = str(d.get('product_details') if d.get('product_details') is not None
                    else d.get('items_text') or '').splitlines()

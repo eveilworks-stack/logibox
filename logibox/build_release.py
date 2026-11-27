@@ -5,12 +5,12 @@ APP=Path(__file__).resolve().parent
 sys.path.insert(0,str(APP))
 from app_version import VERSION,DISPLAY_VERSION,SCHEMA_VERSION,build_id
 
-APPLICATION='''app_version.py attachments.py auth_security.py calc.py carry_management.py
+APPLICATION='''app_version.py backup_restore.py attachments.py auth_security.py calc.py carry_management.py
 case_summary.py sub_participation.py company_seal.py documents.py evidence_documents.py funding_ledger.py launcher.py line_case_reader.py
 password_recovery.py pdf_archive.py principal_balance.py principal_funding.py
 purchase_reader.py server.py settlement_documents.py profit_settlement.py profit_settlement_documents.py settlement_principal.py update.py launch.ps1
 password_recovery.ps1 start.bat start.command update.bat schema.sql requirements.txt app.ico logi-tomos.ico
-logibox-yellow.ico build_release.py run_tests.py README.txt 起動.vbs パスワード再設定.vbs 更新手順.txt UPDATE_ONLY.txt 修正報告.txt 利益精算操作手順.txt ver0.73実装・テスト報告.txt'''.split()
+logibox-yellow.ico build_release.py run_tests.py README.txt 起動.vbs パスワード再設定.vbs 更新手順.txt UPDATE_ONLY.txt 修正報告.txt 利益精算操作手順.txt ver0.74実装・テスト報告.txt バックアップ・復元操作手順.txt'''.split()
 ASSETS='''static/index.html static/workflow.js static/funding.js static/profit.js static/logibox.svg
 fonts/BIZUDPGothic-Regular.ttf fonts/BIZUDPGothic-Bold.ttf fonts/OFL.txt
 document_templates/haak_invoice.pdf document_templates/principal_invoice.pdf'''.split()

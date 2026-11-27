@@ -1307,12 +1307,15 @@ async function viewSettings(){
  <div class="card"><h2>仕入先</h2>${m.suppliers.map(s=>`<div class="row"><span>${esc(s.name)}</span><span>${esc(s.invoice_no||'登録番号未入力')}</span></div>`).join('')}<div class="g" style="margin-top:8px">${fld('仕入先を追加','sp_name','')}${fld('登録番号（任意）','sp_no','')}</div><div class="acts"><button onclick="addSup()">追加</button></div></div>
  <div class="card"><h2>元金設定の移行対象</h2>${migrationRows||'<p class="m">移行対象はありません。</p>'}</div>
  <div class="card"><h2>パスワード</h2><div class="g">${fld('現在のパスワード','pw_cur','',{type:'password'})}${fld('新しいパスワード(8文字以上)','pw_new','',{type:'password'})}</div><div class="acts"><button onclick="chPw()">パスワードを変更</button></div></div>
- <div class="card"><h2>バックアップ・PDF保存先</h2><p>納期の年 → 管理番号・案件番号・案件名のフォルダに、仕入・下請け・ハーク・その他の証憑を整理します。「00_証憑一覧.pdf」と「案件証憑一式.pdf」を自動更新します。月次精算は共通フォルダに保存し、各案件の一覧に参照先を掲載します。原本・旧版はアプリ内で保管します。</p>
+ <div class="card"><h2>バックアップ・復元</h2>
+ <div class="acts"><button class="s" onclick="downloadFile('/api/backup/full')">全体バックアップ（ZIP）</button><button class="s" onclick="chooseBackupRestore()">バックアップから復元</button></div>
+ <p class="m">ZIPを解凍せずに選択できます。復元前に現在のデータを自動バックアップします。</p>
+ <h3>PDFコピー保存先設定</h3><p>納期の年 → 管理番号・案件番号・案件名のフォルダに、仕入・下請け・ハーク・その他の証憑を整理します。「00_証憑一覧.pdf」と「案件証憑一式.pdf」を自動更新します。月次精算は共通フォルダに保存し、各案件の一覧に参照先を掲載します。原本・旧版はアプリ内で保管します。</p>
  ${fld('PDFコピー保存先（絶対パス、空欄で既定）','pdf-archive-directory',pdfArchive.directory)}
  <p class="m" style="overflow-wrap:anywhere">有効な保存先：${esc(pdfArchive.effective_directory)}</p>
  ${pdfArchive.environment_override?'<p class="m">環境変数 LOGIBOX_PDF_DIR が優先されています。画面の保存値を使うには環境変数を解除して再起動してください。</p>':''}
  ${pdfArchive.error?`<p role="alert" style="overflow-wrap:anywhere">${esc(pdfArchive.error)}</p>`:''}
- <div class="acts"><button class="s" onclick="act(savePdfArchiveSettings,'PDF保存先を保存し、コピーを再試行しました')">保存してPDFコピーを再実行</button><button class="s" onclick="downloadFile('/api/backup/full')">添付書類を含む全体バックアップ（ZIP）</button><button class="s" onclick="downloadFile('/api/backup')">DBのみバックアップ</button></div></div>`);
+ <div class="acts"><button class="s" onclick="act(savePdfArchiveSettings,'PDF保存先を保存し、コピーを再試行しました')">保存してPDFコピーを再実行</button><button class="s" onclick="downloadFile('/api/backup')">DBのみバックアップ</button></div></div>`);
  window.SUBS=m.subs;
  ES=null;
  addCompanyFields(c);
@@ -1342,6 +1345,52 @@ async function viewSettings(){
   $('#settings-panel-company').append(restore);
  }
 }
+let backupRestoreBusy=false;
+function chooseBackupRestore(){
+ if(backupRestoreBusy)return;
+ const input=document.createElement('input');input.type='file';input.accept='.zip,application/zip';
+ input.onchange=()=>{if(input.files[0])inspectBackupRestore(input.files[0])};input.click();
+}
+async function inspectBackupRestore(file){
+ if(backupRestoreBusy)return;
+ if(file.size>180*1024*1024){alert('バックアップZIPは180MB以内にしてください');return}
+ backupRestoreBusy=true;
+ let previewToken=null;
+ const dialog=document.createElement('dialog');dialog.style.cssText='max-height:85vh;overflow:auto;max-width:620px;width:90%;border:1px solid #cad8e8;border-radius:12px;color:var(--navy)';
+ dialog.innerHTML='<h2>バックアップから復元</h2><p role="status">ZIPの内容・データの互換性を確認しています…</p>';
+ document.body.append(dialog);dialog.showModal();
+ dialog.oncancel=e=>{if(backupRestoreBusy)e.preventDefault()};
+ const guard=e=>{if(backupRestoreBusy){e.preventDefault();e.returnValue=''}};window.addEventListener('beforeunload',guard);
+ const finish=()=>{if(previewToken){fetch('/api/backup/cancel',{method:'POST',headers:{'Content-Type':'application/json','X-Requested-With':'app'},body:JSON.stringify({token:previewToken})});previewToken=null}backupRestoreBusy=false;window.removeEventListener('beforeunload',guard);dialog.remove()};
+ try{
+  const data=await new Promise((resolve,reject)=>{const r=new FileReader();r.onload=()=>resolve(String(r.result).split(',')[1]);r.onerror=reject;r.readAsDataURL(file)});
+  const info=await api('POST','/api/backup/inspect',{data});
+  previewToken=info.token;
+  dialog.innerHTML=`<style>dialog button:disabled{opacity:.45;cursor:not-allowed}</style><h2>復元内容の確認</h2><p style="overflow-wrap:anywhere">${esc(file.name)}</p>
+   <p>バックアップ日時：${esc(info.created_at?new Date(info.created_at).toLocaleString():'記録なし（旧形式）')}<br>作成バージョン：${esc(info.version)}<br>案件：${info.counts.cases}件 ／ 帳票：${info.counts.issued_documents}件 ／ 帳票旧版：${info.counts.issued_document_history}件 ／ 都度精算書：${info.counts.profit_documents}件<br>下請け：${info.counts.subcontractors}件 ／ 月次精算：${info.counts.settlements}件</p>
+   <p><strong>現在の業務データはバックアップ内のデータに置き換わります</strong></p>
+   <p>このPCの現在のログインパスワードを維持します。PDFコピー先は既定に戻します。復元後に再ログインし、設定から保存先を再設定してください。</p>
+   ${info.warnings.map(w=>`<p>${esc(w)}</p>`).join('')}
+   ${info.missing.length?`<p role="alert">復元できない原本：${info.missing.length}件。ZIPに含まれていないため復元できません。</p><ul style="max-height:140px;overflow:auto">${info.missing.map(n=>`<li>${esc(n)}</li>`).join('')}</ul>`:''}
+   <label style="display:flex;align-items:center;gap:8px"><input style="width:auto;min-height:0;margin:0" type="checkbox" id="restore-ack">置き換え内容${info.missing.length?'と復元できない項目':''}を確認しました</label>
+   <div class="acts"><button id="restore-run" disabled>自動バックアップして復元</button><button class="s" id="restore-cancel">キャンセル</button></div>`;
+  backupRestoreBusy=false;
+  dialog.querySelector('#restore-ack').onchange=e=>{dialog.querySelector('#restore-run').disabled=!e.target.checked};
+  dialog.querySelector('#restore-cancel').onclick=finish;
+  dialog.oncancel=e=>{if(backupRestoreBusy)e.preventDefault();else finish()};
+  dialog.querySelector('#restore-run').onclick=async()=>{
+   if(backupRestoreBusy)return;backupRestoreBusy=true;
+   dialog.innerHTML='<h2>復元中</h2><p role="status">現在のデータを保存してから置き換えています。完了するまでアプリを閉じないでください。</p>';
+   try{
+    const result=await api('POST','/api/backup/restore',{token:info.token,confirmed:true});
+    previewToken=null;backupRestoreBusy=false;
+    dialog.innerHTML=`<h2>復元が完了しました</h2><p>復元前の自動バックアップ：</p><p style="overflow-wrap:anywhere">${esc(result.backup)}</p><p>再ログイン後、添付PDF・精算金額を確認し、PDFコピー保存先を再設定してください。</p><button id="restore-done">ログイン画面へ</button>`;
+    dialog.querySelector('#restore-done').onclick=()=>{finish();location.reload()};
+   }catch(error){backupRestoreBusy=false;dialog.innerHTML='<h2>復元できませんでした</h2><p role="alert"></p><button>閉じる</button>';dialog.querySelector('p').textContent=error.message;dialog.querySelector('button').onclick=finish}
+  };
+ }catch(error){finish();alert(error.message||'ZIPを読み込めませんでした')}
+}
+
 function arrangeSettings(){
  const main=$('.workspace main');
  const wrapper=document.createElement('div');

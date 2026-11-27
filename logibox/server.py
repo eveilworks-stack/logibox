@@ -7,6 +7,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 import calc
 import attachments
+import backup_restore
 import documents
 import line_case_reader
 import purchase_reader
@@ -31,6 +32,8 @@ FILES = os.path.join(DATA, 'files')
 DOCS = os.path.join(DATA, 'documents')
 SESS = {}
 DOC_DRAFTS = {}
+REQUEST_LOCK = threading.Lock()
+RESTORE_ACTIVE = threading.Event()
 DOC_DRAFT_LOCK = threading.Lock()
 DOC_DRAFT_TTL = 15 * 60
 DOC_DRAFT_LIMIT = 24
@@ -64,6 +67,7 @@ def db():
 
 def init():
     with closing(db()) as c:
+        backup_restore.recover(Path(DBP).parent, c)
         init_schema(c)
         sync_pdf_archive(c)
 
@@ -106,7 +110,7 @@ def r_pdf_archive_settings_put(c, b, q):
     return r_pdf_archive_settings(c, {}, {})
 
 
-def init_schema(c):
+def init_schema(c, backup=True):
     existing = c.execute("SELECT 1 FROM sqlite_master WHERE name='cases'").fetchone()
     version = c.execute('PRAGMA user_version').fetchone()[0]
     if version > SCHEMA_VERSION:
@@ -114,7 +118,7 @@ def init_schema(c):
     if not existing:
         with open(os.path.join(BASE, 'schema.sql'), encoding='utf-8') as schema:
             c.executescript(schema.read())
-    elif version < SCHEMA_VERSION:
+    elif version < SCHEMA_VERSION and backup:
         backup = r_backup_full(c, {}, {})[1]
         with tempfile.NamedTemporaryFile(dir=os.path.dirname(DBP), prefix='before-upgrade-', suffix='.zip', delete=False) as file:
             file.write(backup)
@@ -1605,19 +1609,36 @@ def r_doc_sent(c,b,q,did):
     return dict(ok=True)
 
 def r_backup_full(c,b,q):
-    stream=io.BytesIO()
-    with zipfile.ZipFile(stream,'w',zipfile.ZIP_DEFLATED) as out:
-        fd,tmp=tempfile.mkstemp(suffix='.db');os.close(fd)
-        dst=sqlite3.connect(tmp)
-        try:c.backup(dst);dst.close();out.write(tmp,'app.db')
-        finally:
-            dst.close();os.remove(tmp)
-        for folder,prefix in [(FILES,'files'),(DOCS,'documents')]:
-            if os.path.isdir(folder):
-                for name in os.listdir(folder):
-                    path=attachments.safe_path(folder,name)
-                    if os.path.isfile(path):out.write(path,prefix+'/'+name)
-    return ('file',stream.getvalue(),'full_backup_'+datetime.datetime.now().strftime('%Y%m%d_%H%M')+'.zip','application/zip')
+    raw = backup_restore.create(c, FILES, DOCS, backup_restore.template_files(Path(DBP).parent, BASE))
+    return ('file', raw, 'full_backup_'+datetime.datetime.now().strftime('%Y%m%d_%H%M')+'.zip', 'application/zip')
+
+
+def r_backup_inspect(c,b,q):
+    try:
+        raw=base64.b64decode(b.get('data',''),validate=True)
+        return backup_restore.prepare(raw,BASE,Path(DBP).parent)
+    except (ValueError, OSError, sqlite3.DatabaseError) as exc:
+        raise Err(str(exc)) from exc
+
+
+def r_backup_cancel(c,b,q):
+    item=backup_restore.PENDING.pop(str(b.get('token','')),None)
+    if item:
+        import shutil
+        shutil.rmtree(item[0],ignore_errors=True)
+    return dict(ok=True)
+
+
+def r_backup_restore(c,b,q):
+    if b.get('confirmed') is not True:
+        raise Err('復元確認が必要です')
+    try:
+        result=backup_restore.restore(c,b.get('token',''),Path(DBP).parent,FILES,DOCS,getset(c,'pw'),BASE)
+    except (ValueError, OSError, sqlite3.DatabaseError) as exc:
+        raise Err(str(exc)) from exc
+    DOC_DRAFTS.clear()
+    SESS.clear()
+    return result
 
 
 SETTLEMENT_STATES = {
@@ -2401,6 +2422,9 @@ ROUTES = [
     ('GET', r'/api/document-history/(\d+)/preview', r_doc_history_preview),
     ('PUT', r'/api/documents/(\d+)/sent', r_doc_sent),
     ('GET', r'/api/backup/full', r_backup_full),
+    ('POST', r'/api/backup/inspect', r_backup_inspect),
+    ('POST', r'/api/backup/restore', r_backup_restore),
+    ('POST', r'/api/backup/cancel', r_backup_cancel),
     ('GET', r'/api/sub-mode-migrations', r_sub_mode_migrations),
     ('GET', r'/api/master', r_master), ('PUT', r'/api/company', r_company_put),
     ('POST', r'/api/company/seal/restore', r_company_seal_restore),
@@ -2450,6 +2474,20 @@ class H(BaseHTTPRequestHandler):
         return None
 
     def handle_any(self, method):
+        # No request may retain a connection to data being replaced.
+        if RESTORE_ACTIVE.is_set():
+            return self.js(dict(error='復元中です。完了後にもう一度操作してください'),409)
+        REQUEST_LOCK.acquire()
+        try:
+            if urlparse(self.path).path == '/api/backup/restore':RESTORE_ACTIVE.set()
+            if (Path(DBP).parent/'.restore-journal').exists():
+                return self.js(dict(error='自動復旧が必要です。LOGIBOXを再起動してください'),503)
+            return self.handle_locked(method)
+        finally:
+            RESTORE_ACTIVE.clear()
+            REQUEST_LOCK.release()
+
+    def handle_locked(self, method):
         u = urlparse(self.path)
         try:
             if self.loopback and (self.headers.get('Host') or '') not in (f'127.0.0.1:{self.port}', f'localhost:{self.port}'):
@@ -2476,7 +2514,7 @@ class H(BaseHTTPRequestHandler):
                     raise Err('不正なリクエストです', 403)
                 n = int(self.headers.get('Content-Length') or 0)
                 upload = re.fullmatch(r'/api/(?:purchase-read|cases/\d+/(?:attachments|purchase-read|purchase-import)|attachments/\d+|settlements/\d+/invoice)', u.path)
-                limit = 12_000_000 if upload else 1_000_000
+                limit = 252_000_000 if u.path == '/api/backup/inspect' else (12_000_000 if upload else 1_000_000)
                 if n < 0 or n > limit:
                     raise Err('データが大きすぎます')
                 raw = self.rfile.read(n) if n else b''
@@ -2515,7 +2553,7 @@ class H(BaseHTTPRequestHandler):
                         context = {'session': session} if fn in (r_doc_new, r_doc_preview, r_doc_preview_file, r_doc_edit_preview, r_doc_put) else {}
                         res = fn(c, body, parse_qs(u.query), *mt.groups(), **context)
                         c.commit()
-                        if method in ('POST', 'PUT', 'DELETE'):
+                        if method in ('POST', 'PUT', 'DELETE') and fn not in (r_backup_inspect, r_backup_restore, r_backup_cancel):
                             sync_pdf_archive(c)
                         if isinstance(res, tuple) and res[0] in ('file', 'inline'):
                             mime = res[3] if len(res) > 3 else 'application/octet-stream'
