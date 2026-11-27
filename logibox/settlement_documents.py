@@ -29,7 +29,7 @@ def line_text(line, email=False):
     mode = '利益のみの請求' if line['profit_only'] else '元金残額と利益の請求'
     text = (f"{label(line)}　{mode}\n"
             f"開始日 {line.get('start_date') or '未登録'} / 納期 {line.get('due_date') or '未登録'}\n"
-            f"元金残額 {line['principal'] - line['carry_over'] - line.get('ledger_outgoing',0) - line.get('refunded',0):,}円 / 利益 {line['sub_profit']:,}円 / "
+            f"元金残額 {line['principal'] - line['carry_over'] - line.get('ledger_outgoing',0) - line.get('refunded',0) - line.get('principal_reserved',0):,}円 / 利益 {line['sub_profit']:,}円 / "
             f"税込請求額 {line['payout']:,}円")
     if line['carry_over'] and not line.get('carry_to_case_id'):
         text += (f"\n元金一時預かり {line['carry_over']:,}円（充当先なし）。預かり元金は今回の請求額に含めません。"
@@ -136,5 +136,5 @@ def profit_text(d):
             lines.append(f"  旧履歴の支払済み利益 {ps['partial_paid']:,}円")
         for p in ps['payments']:
             if not p['cancelled']:
-                lines.append(f"  {'都度精算' if p['method']=='full' else '旧精算履歴'} {p['amount']:,}円 / 実際の精算日 {p['paid_date'] or '未払い（予定のみ）'} / 予定日 {p['planned_date'] or '―'}")
+                lines.append(f"  {'都度精算' if p['method']=='full' else '旧精算履歴'} 利益 {p.get('profit_amount',p['amount']):,}円 / 元金返還 {p.get('principal_amount',0):,}円 / 支払合計 {p['amount']:,}円 / 実際の精算日 {p['paid_date'] or '未払い（予定のみ）'} / 予定日 {p['planned_date'] or '―'}")
     return '\n'.join(lines)

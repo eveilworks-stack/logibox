@@ -17,13 +17,16 @@ def render(d):
     heading=ParagraphStyle('ProfitTitle',parent=body,fontName=documents.BOLD,fontSize=19,leading=28,textColor=navy)
     def p(x,style=body): return Paragraph(escape(str(x or '―')).replace('\n','<br/>'),style)
     company=d['company']; payment=d['payment']
-    flow=[p('利益精算書',heading),p(f"精算書番号 {d['number']}　発行日 {d['issued_date']}"),Spacer(1,12),
+    flow=[p('都度精算書' if payment.get('principal_amount') else '利益精算書',heading),p(f"精算書番号 {d['number']}　発行日 {d['issued_date']}"),Spacer(1,12),
           p(d['sub_name']+' 御中'),Spacer(1,100)]
     rows=[('案件番号・案件名',f"{d['case_no'] or '案件番号未登録'}　{d['case_name']}"),
           ('担当元金',f"{d['principal_tax_in']:,}円"),('確定利益額',f"{d['profit']:,}円"),
-          ('今回の利益精算額',f"{payment['amount']:,}円"),('精算後の未精算残額',f"{d['remaining_after']:,}円"),
+          ('今回の利益精算額',f"{payment.get('profit_amount',payment['amount']):,}円"),('精算後の未精算残額',f"{d['remaining_after']:,}円"),
           ('実際の支払日',payment['paid_date']),('支払方法','銀行振込' if payment['payment_method']=='bank' else '現金手渡し'),
           ('備考',payment['note'])]
+    if payment.get('principal_amount'):
+        rows[4:4]=[('今回の元金返還額',f"{payment['principal_amount']:,}円"),('今回の支払合計',f"{payment['amount']:,}円")]
+        rows.insert(7,('返還後の元金残高',f"{d['principal_balance_after']:,}円"))
     table=Table([[p(k),p(v)] for k,v in rows],colWidths=[165,345],hAlign='LEFT')
     table.setStyle(TableStyle([('BACKGROUND',(0,0),(0,-1),blue),('BOX',(0,0),(-1,-1),.7,navy),
         ('INNERGRID',(0,0),(-1,-1),.3,colors.HexColor('#ccd9e6')),('VALIGN',(0,0),(-1,-1),'TOP'),

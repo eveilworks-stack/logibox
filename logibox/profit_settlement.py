@@ -1,4 +1,4 @@
-"""利益のみの予定・実支払・訂正履歴。元金台帳には書き込まない。"""
+"""案件ごとの都度精算。利益と元金は成分別に管理し、一括で予定・支払を記録する。"""
 import datetime
 import json
 import hashlib
@@ -6,6 +6,8 @@ import secrets
 from pathlib import Path
 import calc
 import case_summary
+import settlement_principal
+from principal_funding import runtime
 
 METHODS = {'normal':'通常精算', 'full':'都度精算'}
 STATES = ('未精算','精算予定','一部精算済','精算完了')
@@ -35,6 +37,15 @@ def init(c):
         id INTEGER PRIMARY KEY, payment_id INTEGER NOT NULL REFERENCES profit_payments(id),
         revision INTEGER NOT NULL, number TEXT NOT NULL UNIQUE, issued_date TEXT NOT NULL,
         snapshot_json TEXT NOT NULL, pdf BLOB NOT NULL, UNIQUE(payment_id,revision))''')
+    columns={r[1] for r in c.execute('PRAGMA table_info(profit_payments)')}
+    if 'principal_amount' not in columns:
+        c.execute('ALTER TABLE profit_payments ADD COLUMN principal_amount INTEGER NOT NULL DEFAULT 0 CHECK(principal_amount>=0 AND principal_amount<=amount)')
+    if 'principal_balance_after' not in columns:
+        c.execute('ALTER TABLE profit_payments ADD COLUMN principal_balance_after INTEGER CHECK(principal_balance_after>=0)')
+    columns={r[1] for r in c.execute('PRAGMA table_info(profit_monthly_payments)')}
+    for definition in ('principal_amount INTEGER', 'principal_deducted INTEGER', 'principal_reserved INTEGER'):
+        if definition.split()[0] not in columns:
+            c.execute('ALTER TABLE profit_monthly_payments ADD COLUMN '+definition)
     for table in ('profit_history','profit_documents','profit_monthly_payments'):
         for action in ('UPDATE','DELETE'):
             c.execute(f'''CREATE TRIGGER IF NOT EXISTS {table}_no_{action.lower()}
@@ -50,8 +61,12 @@ def audit(c,cid,sid,pid,before,after,reason):
          json.dumps(before,ensure_ascii=False),json.dumps(after,ensure_ascii=False)))
 
 
+def profit_amount(payment):
+    return payment['amount']-payment.get('principal_amount',0) if isinstance(payment,dict) else payment['amount']-payment['principal_amount']
+
+
 def summary(c,cid,sid,exclude=None):
-    from server import Err, default_settle
+    Err,default_settle=runtime().Err,runtime().default_settle
     row=c.execute('''SELECT cs.*,a.case_no,a.name AS case_name,a.planned_rate_pct,a.due_date,
         a.deleted_at,sc.name AS sub_name FROM case_subs cs JOIN cases a ON a.id=cs.case_id
         JOIN subcontractors sc ON sc.id=cs.sub_id WHERE cs.case_id=? AND cs.sub_id=?''',(cid,sid)).fetchone()
@@ -64,8 +79,8 @@ def summary(c,cid,sid,exclude=None):
     d['contract_rate']=str(__import__('decimal').Decimal(str(d['planned_rate_pct']))-__import__('decimal').Decimal(str(d['fee_rate_pct'])))
     payments=[dict(x) for x in c.execute('SELECT * FROM profit_payments WHERE case_id=? AND sub_id=? ORDER BY id',(cid,sid))]
     active=[x for x in payments if not x['cancelled'] and x['id']!=exclude]
-    d['full_paid']=sum(x['amount'] for x in active if x['paid_date'] and x['method']=='full')
-    d['partial_paid']=sum(x['amount'] for x in active if x['paid_date'] and x['method']=='partial')
+    d['full_paid']=sum(profit_amount(x) for x in active if x['paid_date'] and x['method']=='full')
+    d['partial_paid']=sum(profit_amount(x) for x in active if x['paid_date'] and x['method']=='partial')
     d['individual_paid']=d['full_paid']+d['partial_paid']
     d['monthly_paid']=c.execute('SELECT COALESCE(SUM(amount),0) FROM profit_monthly_payments WHERE case_id=? AND sub_id=?',(cid,sid)).fetchone()[0]
     frozen=c.execute('''SELECT l.sub_profit,s.status FROM settlement_lines l JOIN settlements s ON s.id=l.settlement_id WHERE l.case_id=? AND s.sub_id=?''',(cid,sid)).fetchone()
@@ -73,7 +88,7 @@ def summary(c,cid,sid,exclude=None):
         d['profit']=frozen['sub_profit']
         if frozen['status']=='paid': d['confirmed']=True
     d['paid']=d['individual_paid']+d['monthly_paid']
-    d['planned']=sum(x['amount'] for x in active if not x['paid_date'])
+    d['planned']=sum(profit_amount(x) for x in active if not x['paid_date'])
     d['remaining']=d['profit']-d['paid']
     d['available']=max(0,d['remaining']-d['planned'])
     monthly=c.execute('''SELECT s.status,s.pay_date FROM settlements s JOIN settlement_lines l ON l.settlement_id=s.id
@@ -83,6 +98,16 @@ def summary(c,cid,sid,exclude=None):
     d['status']='精算完了' if d['confirmed'] and d['remaining']==0 else '一部精算済' if d['paid'] else '精算予定' if d['planned'] else '未精算'
     pref=c.execute('SELECT method FROM profit_preferences WHERE case_id=? AND sub_id=?',(cid,sid)).fetchone()
     d['method']=pref[0] if pref else 'normal'
+    own=settlement_principal.totals(c,cid,sid,exclude)
+    import principal_balance
+    balance=principal_balance.values(c,row,exclude_payment=exclude)
+    d['principal_paid']=own['paid']
+    d['principal_planned']=own['planned']
+    d['principal_balance']=balance['balance']
+    d['principal_available']=settlement_principal.available(c,row,exclude)
+    d['principal_manual_refunded']=balance['account']['refunded']
+    for payment in payments:
+        payment['profit_amount']=profit_amount(payment)
     d['payments']=payments
     d['monthly_history']=[dict(x) for x in c.execute('SELECT * FROM profit_monthly_payments WHERE case_id=? AND sub_id=?',(cid,sid))]
     d['history']=[dict(x) for x in c.execute('SELECT * FROM profit_history WHERE case_id=? AND sub_id=? ORDER BY id DESC',(cid,sid))]
@@ -102,12 +127,14 @@ def r_list(c,b,q):
         items=[x for x in rows if x['sub_id']==sub['id']]
         groups.append(dict(id=sub['id'],name=sub['name'],profit=sum(x['profit'] for x in items),
             full_paid=sum(x['full_paid'] for x in items),remaining=sum(x['remaining'] for x in items),
-            monthly_scheduled=sum(x['monthly_scheduled'] for x in items)))
+            monthly_scheduled=sum(x['monthly_scheduled'] for x in items),
+            principal_balance=sum(x['principal_balance'] for x in items),
+            principal_paid=sum(x['principal_paid'] for x in items)))
     return dict(rows=rows,subcontractors=groups)
 
 
 def r_save(c,b,q,cid,sid):
-    from server import Err,dt
+    Err,dt=runtime().Err,runtime().dt
     c.execute('BEGIN IMMEDIATE')
     d=summary(c,cid,sid)
     if d['deleted_at']: raise Err('削除ボックスの案件は編集できません')
@@ -138,16 +165,25 @@ def r_save(c,b,q,cid,sid):
         if not 8<=len(key)<=150: raise Err('再送防止キーがありません。開き直してください')
         duplicate=c.execute('SELECT * FROM profit_payments WHERE request_key=?',(key,)).fetchone()
         if duplicate:
-            fields=('method','amount','planned_date','paid_date','payment_method','note')
-            if str(duplicate['case_id'])!=str(cid) or str(duplicate['sub_id'])!=str(sid) or any(str(duplicate[k] or '')!=str(b.get(k) or '') for k in fields):
+            fields=('method','planned_date','paid_date','payment_method','note')
+            if (b.get('principal_amount') is not None and b['principal_amount']!=duplicate['principal_amount']) or profit_amount(duplicate)!=b.get('amount') or bool(duplicate['principal_amount'])!=bool(b.get('include_principal',False)) or str(duplicate['case_id'])!=str(cid) or str(duplicate['sub_id'])!=str(sid) or any(str(duplicate[k] or '')!=str(b.get(k) or '') for k in fields):
                 raise Err('同じ処理キーで内容を変更できません',409)
             return summary(c,cid,sid)
     if not d['haak_received']: raise Err('ハークからの実入金確認完了後に登録できます')
     amount=b.get('amount')
-    if isinstance(amount,bool) or not isinstance(amount,int) or amount<=0: raise Err('精算金額は1円以上の整数を指定してください')
+    if isinstance(amount,bool) or not isinstance(amount,int) or amount<0: raise Err('利益精算額は0円以上の整数を指定してください')
+    if not isinstance(b.get('include_principal',False),bool): raise Err('元金返還の選択を確認してください')
     capacity=summary(c,cid,sid,exclude=pid)
     if amount>capacity['available']: raise Err('確定利益の未予約残額を超える精算はできません')
-    if method=='full' and (amount!=capacity['remaining'] or capacity['planned']): raise Err('都度精算は未予約残額の全額を指定してください')
+    if method=='full' and not (old and amount==profit_amount(old)) and (amount!=capacity['remaining'] or capacity['planned']): raise Err('都度精算は未予約残額の全額を指定してください')
+    principal=(old['principal_amount'] if old and old['principal_amount'] else capacity['principal_available']) if b.get('include_principal') else 0
+    if principal>capacity['principal_available']: raise Err('返還可能元金が変更されています。画面を開き直してください',409)
+    expected=b.get('principal_amount')
+    if expected is not None and (isinstance(expected,bool) or not isinstance(expected,int) or expected!=principal):
+        raise Err('元金返還額が変更されています。画面を開き直して金額を確認してください',409)
+    if b.get('include_principal') and principal<=0:
+        raise Err('対象案件に返還可能な元金がありません。充当済み・預かり金・予約済み・回収状況を確認してください',409)
+    if amount+principal<=0: raise Err('未精算利益または返還可能元金がありません',409)
     planned=dt(b,'planned_date','精算予定日'); paid=dt(b,'paid_date','実際の支払日')
     if not planned and not paid: raise Err('精算予定日または実際の支払日を入力してください')
     if paid and paid>datetime.date.today().isoformat(): raise Err('実際の支払日は今日以前を指定してください')
@@ -158,14 +194,20 @@ def r_save(c,b,q,cid,sid):
     # Same dated amount must be amended through the editor, never silently paid twice.
     if c.execute('''SELECT 1 FROM profit_payments WHERE case_id=? AND sub_id=? AND cancelled=0
         AND amount=? AND COALESCE(paid_date,'')=? AND COALESCE(planned_date,'')=? AND id<>?''',
-        (cid,sid,amount,paid or '',planned or '',pid or 0)).fetchone(): raise Err('同じ日付・金額の精算が登録済みです。履歴を確認してください',409)
-    values=(method,amount,planned,paid,payment_method,note)
+        (cid,sid,amount+principal,paid or '',planned or '',pid or 0)).fetchone(): raise Err('同じ日付・金額の精算が登録済みです。履歴を確認してください',409)
+    values=(method,amount+principal,planned,paid,payment_method,note,principal)
     if old:
-        c.execute('UPDATE profit_payments SET method=?,amount=?,planned_date=?,paid_date=?,payment_method=?,note=?,revision=revision+1 WHERE id=?',values+(pid,))
+        c.execute('UPDATE profit_payments SET method=?,amount=?,planned_date=?,paid_date=?,payment_method=?,note=?,principal_amount=?,revision=revision+1 WHERE id=?',values+(pid,))
     else:
-        pid=c.execute('''INSERT INTO profit_payments(case_id,sub_id,method,amount,planned_date,paid_date,payment_method,note,request_key,created_at)
-            VALUES(?,?,?,?,?,?,?,?,?,?)''',(cid,sid)+values+(key,datetime.datetime.now(datetime.timezone.utc).isoformat())).lastrowid
+        pid=c.execute('''INSERT INTO profit_payments(case_id,sub_id,method,amount,planned_date,paid_date,payment_method,note,principal_amount,request_key,created_at)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?)''',(cid,sid)+values+(key,datetime.datetime.now(datetime.timezone.utc).isoformat())).lastrowid
     c.execute('INSERT INTO profit_preferences VALUES(?,?,?) ON CONFLICT(case_id,sub_id) DO UPDATE SET method=excluded.method',(cid,sid,method))
+    import principal_balance
+    principal_balance.validate_case(c,int(cid))
+    closing_balance=summary(c,cid,sid)['principal_balance'] if paid else None
+    if old and old['paid_date'] and paid and old['principal_amount']==principal and old['amount']==amount+principal:
+        closing_balance=old['principal_balance_after']
+    c.execute('UPDATE profit_payments SET principal_balance_after=? WHERE id=?',(closing_balance,pid))
     after=dict(c.execute('SELECT * FROM profit_payments WHERE id=?',(pid,)).fetchone())
     audit(c,cid,sid,pid,old,after,str(b.get('reason') or '利益精算登録'))
     return summary(c,cid,sid)
@@ -174,24 +216,25 @@ def r_save(c,b,q,cid,sid):
 def record_monthly(c,view,paid):
     for line in view['lines']:
         d=summary(c,line['case_id'],view['sub_id'])
-        c.execute('''INSERT INTO profit_monthly_payments(line_id,case_id,sub_id,amount,paid_date,deducted,reserved)
-            VALUES(?,?,?,?,?,?,?)''',(line['id'],line['case_id'],view['sub_id'],max(0,line['sub_profit']-d['individual_paid']-d['planned']),paid,d['individual_paid'],d['planned']))
+        c.execute('''INSERT INTO profit_monthly_payments(line_id,case_id,sub_id,amount,paid_date,deducted,reserved,principal_amount,principal_deducted,principal_reserved)
+            VALUES(?,?,?,?,?,?,?,?,?,?)''',(line['id'],line['case_id'],view['sub_id'],max(0,line['sub_profit']-d['individual_paid']-d['planned']),paid,d['individual_paid'],d['planned'],line['principal_payable'],line['refunded'],d['principal_planned']))
 
 
 def r_document(c,b,q,pid):
-    from server import Err,getset
+    Err,getset=runtime().Err,runtime().getset
     import profit_settlement_documents
     issue=b.get('issue') is True
     if issue: c.execute('BEGIN IMMEDIATE')
     p=c.execute('SELECT * FROM profit_payments WHERE id=?',(pid,)).fetchone()
     if not p or p['cancelled'] or not p['paid_date']: raise Err('支払完了した有効な利益精算を選択してください')
     p=dict(p)
+    p['profit_amount']=profit_amount(p)
     d=summary(c,p['case_id'],p['sub_id'])
     number=f"PS-{int(pid):06d}-R{p['revision']:02d}"
     # Prior amount is held internally but excluded from the PDF layout.
-    previous=sum(x['amount'] for x in d['payments'] if not x['cancelled'] and x['paid_date'] and (x['paid_date'],x['id'])<(p['paid_date'],p['id']))
+    previous=sum(profit_amount(x) for x in d['payments'] if not x['cancelled'] and x['paid_date'] and (x['paid_date'],x['id'])<(p['paid_date'],p['id']))
     previous+=sum(x['amount'] for x in d['monthly_history'] if x['paid_date']<=p['paid_date'])
-    snapshot=dict(d,payment=p,previous_paid=previous,remaining_after=d['profit']-previous-p['amount'],
+    snapshot=dict(d,principal_balance_after=p['principal_balance_after'] if p['principal_balance_after'] is not None else d['principal_balance'],payment=p,previous_paid=previous,remaining_after=d['profit']-previous-profit_amount(p),
         number=number,issued_date=datetime.date.today().isoformat(),company=dict(c.execute('SELECT * FROM company WHERE id=1').fetchone()),seal=getset(c,'company_seal_png'))
     # Preview and issue use the same deterministic layout, issuance freezes the snapshot.
     stored=c.execute('SELECT pdf FROM profit_documents WHERE payment_id=? AND revision=?',(pid,p['revision'])).fetchone()
@@ -203,14 +246,14 @@ def r_document(c,b,q,pid):
 
 
 def r_document_get(c,b,q,did):
-    from server import Err
+    Err=runtime().Err
     row=c.execute('SELECT * FROM profit_documents WHERE id=?',(did,)).fetchone()
     if not row: raise Err('発行済み精算書が見つかりません',404)
     return 'file',bytes(row['pdf']),row['number']+'.pdf','application/pdf'
 
 
 def r_monthly_revision(c,b,q,settlement_id):
-    from server import Err,settlement_view
+    Err,settlement_view=runtime().Err,runtime().settlement_view
     c.execute('BEGIN IMMEDIATE')
     before=settlement_view(c,settlement_id)
     if before['status'] not in ('requested','received','mismatch'): raise Err('依頼済み・未払いの精算だけ訂正版を登録できます',409)

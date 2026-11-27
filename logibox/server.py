@@ -446,16 +446,22 @@ def r_dashboard(c, b, q):
                 '''SELECT l.*, s.period, s.status, s.pay_date FROM settlement_lines l
                    JOIN settlements s ON s.id=l.settlement_id WHERE l.case_id=? AND s.sub_id=?''',
                 (i, s['sub_id'])).fetchone()
+            for payment in s['profit_settlement']['payments']:
+                if not payment['cancelled'] and not payment['paid_date']:
+                    todo.append(dict(id=i,tab='sub',text=f"{cs['case_no'] or '案件番号未登録'} {s['sub_name']}へ都度精算予定（利益 {payment['profit_amount']:,}円・元金 {payment['principal_amount']:,}円） 合計 {payment['amount']:,}円",due=payment['planned_date']))
             if settlement and settlement['status'] == 'paid':
+                if c.execute('SELECT 1 FROM profit_monthly_payments WHERE line_id=?',(settlement['id'],)).fetchone():
+                    tot['sub_unsettled_profit'] += s['profit_settlement']['remaining']
                 continue
             amount = calc.sub_payout(settlement['principal'], settlement['sub_profit'], settlement['carry_over']) if settlement else s['payout']
             amount -= s['profit_settlement']['individual_paid'] + s['profit_settlement']['planned']
-            amount -= balance['refunded'] + funding_ledger.outgoing(c,i,s['sub_id'])
+            amount -= balance['refunded'] + balance['principal_reserved'] + funding_ledger.outgoing(c,i,s['sub_id'])
             due = settlement['pay_date'] if settlement else s['settle_date_auto']
             period = cs['due_date'][:7] if cs['due_date'] else ''
             tot['sub_unsettled'] += amount
-            tot['sub_unsettled_profit'] += (settlement['sub_profit'] if settlement else s['sub_profit']) - s['profit_settlement']['individual_paid'] - s['profit_settlement']['planned']
-            todo.append(dict(id=i, tab='sub', period=period, text=f"{s['settlement_no']} {s['sub_name']}へ精算 {amount:,}円", due=due))
+            tot['sub_unsettled_profit'] += (settlement['sub_profit'] if settlement else s['sub_profit']) - s['profit_settlement']['individual_paid']
+            if amount:
+                todo.append(dict(id=i, tab='sub', period=period, text=f"{s['settlement_no']} {s['sub_name']}へ精算 {amount:,}円", due=due))
         for p in v['purchases']:
             if p['paid_amount'] < p['amount_tax_in']:
                 todo.append(dict(id=i, tab='purchase', text=f"{cs['mgmt_no']} {p['supplier_name']}へ仕入の支払 {p['amount_tax_in'] - p['paid_amount']:,}円", due=p['due_date']))
@@ -1716,12 +1722,18 @@ def settlement_view(c, sid):
         item['payout'] -= balance['refunded'] + item['ledger_outgoing']
         ps = profit_settlement.summary(c, line['case_id'], row['sub_id'])
         item['profit_settlement'] = ps
-        frozen_payment = c.execute('SELECT deducted,reserved FROM profit_monthly_payments WHERE line_id=?',(line['id'],)).fetchone()
+        frozen_payment = c.execute('SELECT * FROM profit_monthly_payments WHERE line_id=?',(line['id'],)).fetchone()
         item['profit_deducted'] = frozen_payment['deducted'] if frozen_payment else ps['individual_paid']
         item['profit_reserved'] = frozen_payment['reserved'] if frozen_payment else ps['planned']
         item['profit_payable'] = max(0,line['sub_profit']-item['profit_deducted']-item['profit_reserved'])
-        item['payout'] -= item['profit_deducted'] + item['profit_reserved']
-        item['profit_only'] = line['carry_over'] + item['ledger_outgoing'] == line['principal'] and line['principal']>0
+        item['principal_reserved'] = ps['principal_planned']
+        item['principal_payable'] = max(0,line['principal']-line['carry_over']-balance['refunded']-item['ledger_outgoing']-item['principal_reserved'])
+        if frozen_payment and frozen_payment['principal_amount'] is not None:
+            item['principal_payable']=frozen_payment['principal_amount']
+            item['refunded']=frozen_payment['principal_deducted']
+            item['principal_reserved']=frozen_payment['principal_reserved']
+        item['payout'] = item['principal_payable']+item['profit_payable']
+        item['profit_only'] = item['principal_payable']==0 and line['principal']>0
         item['recovered_available'] = min(item['principal_available'], balance['recovered'])
         item['principal_received_date'] = sub['principal_received_date'] if sub else None
         item['carry_history'] = carry_management.change_history(c, line['id'])
@@ -1912,7 +1924,7 @@ def r_carry(c, b, q, settlement_id, line_id):
     target_id = consent_date = consent = method = None
     if amount:
         principal_balance.validate_case(c,line['case_id'])
-        if line['recovered_available'] - line['refunded'] - funding_ledger.outgoing(c,line['case_id'],view['sub_id']) < amount:
+        if line['recovered_available'] - line['refunded'] - line['principal_reserved'] - funding_ledger.outgoing(c,line['case_id'],view['sub_id']) < amount:
             raise Err('入金確認済みの元金まで充当できます')
         release = c.execute('SELECT amount FROM principal_release WHERE case_id=? AND sub_id=?',
                             (line['case_id'], view['sub_id'])).fetchone()
@@ -2190,13 +2202,22 @@ def balances_at(c, cases, settlements, cutoff):
             if paid and paid <= cutoff:
                 if line.get('temporary_hold') and line.get('id') not in managed:
                     yield ('元金一時預かり', number, name, s['sub_name'], line['carry_over'], s['settlement_no'])
+                ps=s['profit_settlement']
+                monthly=next((x for x in ps['monthly_history'] if x['line_id']==line['id']),None)
+                if monthly and monthly.get('principal_amount') is not None:
+                    individual=sum(x['amount'] for x in ps['payments'] if not x['cancelled'] and x['paid_date'] and x['paid_date']<=cutoff)
+                    residual=max(0,line['principal']+line['sub_profit']-line['carry_over']-ps['principal_manual_refunded']-line.get('ledger_outgoing',0)-monthly['amount']-monthly['principal_amount']-individual)
+                    if residual:
+                        yield ('下請け未精算',number,name,s['sub_name'],residual,s['settlement_no'])
                 continue
             received = max(0,principal_confirmed(c,s,cutoff)-funding_ledger.outgoing(c,a['id'],s['sub_id'],cutoff)-(managed.get(line.get('id'),{}).get('amount',0)))
+            returned=sum(p['principal_amount'] for p in s['profit_settlement']['payments'] if not p['cancelled'] and p['paid_date'] and p['paid_date']<=cutoff)
+            received=max(0,received-returned)
             if received:
                 yield ('精算前の確認済元金', number, name, s['sub_name'], received, s['settlement_no'])
             if a['due_date'] and a['due_date'] <= cutoff:
                 individual_paid = sum(p['amount'] for p in s['profit_settlement']['payments'] if not p['cancelled'] and p['paid_date'] and p['paid_date']<=cutoff)
-                payout = (line.get('principal',s['principal_tax_in']) + line.get('sub_profit',s['sub_profit']) - line.get('carry_over',0) - line.get('refunded',0) - line.get('ledger_outgoing',0) - individual_paid)
+                payout = (line.get('principal',s['principal_tax_in']) + line.get('sub_profit',s['sub_profit']) - line.get('carry_over',0) - s['profit_settlement']['principal_manual_refunded'] - line.get('ledger_outgoing',0) - individual_paid)
                 if payout:
                     yield ('下請け未精算', number, name, s['sub_name'], payout, s['settlement_no'])
 
@@ -2204,6 +2225,13 @@ def balances_at(c, cases, settlements, cutoff):
 
 def r_export(c, b, q, report):
     period = q.get('period', [''])[0]
+    if report == 'individual-settlements':
+        rows=profit_settlement.r_list(c,{}, {})['rows']
+        return csv_file(report,('案件番号','案件名','下請け','利益精算額','元金返還額','支払合計','精算予定日','実際の支払日','状態','支払方法','備考'),
+            ((x['case_no'],x['case_name'],x['sub_name'],p['profit_amount'],p['principal_amount'],p['amount'],
+              p['planned_date'],p['paid_date'],'取消済' if p['cancelled'] else '支払済' if p['paid_date'] else '精算予定',
+              '銀行振込' if p['payment_method']=='bank' else '現金手渡し',p['note'])
+             for x in rows for p in x['payments'] if not period or (p['paid_date'] or p['planned_date'] or '').startswith(period)))
     if report == 'funding':
         if period:
             settlement_period(period+'-01' if re.fullmatch(r'\d{4}',period) else period)
@@ -2254,11 +2282,12 @@ def r_export(c, b, q, report):
                  line['carry_over'] if line['temporary_hold'] else 0, line['consent_method'],
                  ' / '.join((e['target_case_no'] or '案件番号未登録')+' '+(e['target_name'] or '')+' '+str(e['amount'])+'円 '+e['event_date'] for e in funding_ledger.history(c,"e.source_case_id=? AND e.sub_id=? AND e.kind='principal'",(line['case_id'],s['sub_id'])) if not e['cancelled']),
                  line['profit_settlement']['status'],line['profit_settlement']['full_paid'],
-                 line['profit_settlement']['remaining'],line['profit_reserved'],line['profit_payable'])
+                 line['profit_settlement']['remaining'],line['profit_reserved'],line['profit_payable'],
+                 line['profit_settlement']['principal_paid'],line['profit_settlement']['principal_planned'],line['principal_payable'])
                 for s in settlements if in_period(s['period']) for line in s['lines'])
         return csv_file(report, ('対象月', '下請け', '下請け枠', '案件管理番号', '案件名', '元金', '下請け利益',
                                  '充当額', '充当先', '承諾日', '承諾記録', '振込額', '支払期限', '状態', '完了日', '精算管理番号',
-                                 '案件番号', '充当先案件番号', '請求方式', '依頼税率', '元金の取扱い', '一時預かり額', '承諾方法', '分割充当先・金額・確定日', '利益精算状態','都度精算済み','未精算利益','別途支払予定','月次支払利益'), rows)
+                                 '案件番号', '充当先案件番号', '請求方式', '依頼税率', '元金の取扱い', '一時預かり額', '承諾方法', '分割充当先・金額・確定日', '利益精算状態','都度精算済み','未精算利益','別途支払予定','月次支払利益','都度返還済み元金','別途元金返還予定','月次返還予定元金'), rows)
     cutoff = dt({'at': q.get('at', [''])[0]}, 'at', '期末日')
     if not cutoff:
         raise Err('期末日を指定してください')
@@ -2324,7 +2353,7 @@ ROUTES = [
     ('GET', r'/api/cases/(\d+)/deletion-check', r_case_deletion_check),
     ('GET', r'/api/settings/pdf-archive', r_pdf_archive_settings),
     ('PUT', r'/api/settings/pdf-archive', r_pdf_archive_settings_put),
-    ('GET', r'/api/export/(transactions|cashflow|profit|settlements|balances)', r_export),
+    ('GET', r'/api/export/(transactions|cashflow|profit|settlements|balances|individual-settlements)', r_export),
     ('GET', r'/api/cases/(\d+)/evidence', r_evidence),
     ('GET', r'/api/cases/(\d+)/evidence-bundle', r_evidence_bundle),
     ('GET', r'/api/monthly', r_monthly), ('POST', r'/api/settlements', r_settlement_create),

@@ -20,7 +20,7 @@ def haak_cash(c, cid):
     return max(0, paid), billed > 0 and paid >= billed
 
 
-def values(c, sub):
+def values(c, sub, allow_monthly=False, exclude_payment=None):
     import principal_funding
     s = principal_funding.runtime()
     cid, sid = sub['case_id'], sub['sub_id']
@@ -38,9 +38,16 @@ def values(c, sub):
         managed = line['carry_over']
     transferred = (line['carry_over'] if line and line['carry_to_case_id'] else 0) + extra
     held = line['carry_over'] if line and not line['carry_to_case_id'] else 0
-    refunded = a['refunded']
+    import settlement_principal
+    individual=settlement_principal.totals(c,cid,sid,exclude_payment)
+    refunded = a['refunded'] + individual['paid']
     # 精算支払済みの元金返還分。既に個別返金した分を二重に控除しない。
     final_refund = max(0, line['principal'] - line['carry_over'] - refunded - extra) if line and line['status']=='paid' else 0
+    if line and line['status']=='paid':
+        columns={r[1] for r in c.execute('PRAGMA table_info(profit_monthly_payments)')}
+        if 'principal_amount' in columns:
+            frozen=c.execute('SELECT principal_amount FROM profit_monthly_payments WHERE line_id=?',(line['id'],)).fetchone()
+            if frozen and frozen['principal_amount'] is not None: final_refund=frozen['principal_amount']
     explicit_cash = funding_ledger.cash(c,cid,sid)
     cash_owned = explicit_cash if explicit_cash else (
         max(0,sub['principal_tax_in']-s.incoming_carry(c,cid,sid))
@@ -48,10 +55,11 @@ def values(c, sub):
     owned = min(sub['principal_tax_in'],cash_owned+s.incoming_carry(c,cid,sid))
     balance = max(0, owned - transferred - refunded - final_refund - managed)
     available = max(0, min(balance, recovered - transferred - refunded - final_refund - managed))
-    if line and line['status'] not in ('not_requested','paid'):
+    available=max(0,available-individual['planned'])
+    if not allow_monthly and line and line['status'] not in ('not_requested','paid'):
         available = 0  # 請求依頼中の返還予定元金を再使用しない
     return dict(balance=balance, available=available, recovered=recovered, refunded=refunded,
-                transferred=transferred, held=held, account=a)
+                transferred=transferred, held=held, account=a, individual_refunded=individual['paid'], principal_reserved=individual['planned'])
 
 
 def validate_case(c, cid):
@@ -65,7 +73,7 @@ def validate_case(c, cid):
         raw = a['recovered'] if a['recovered'] is not None else v['recovered']
         total += raw
         line = principal_funding.source_line(c,cid,sub['sub_id'])
-        reserved = (line['carry_over'] if line else 0) + funding_ledger.outgoing(c,cid,sub['sub_id'])
+        reserved = (line['carry_over'] if line else 0) + funding_ledger.outgoing(c,cid,sub['sub_id']) + v['principal_reserved']
         if raw > s.principal_confirmed(c,sub) or raw > cash or v['refunded'] + reserved > v['recovered']:
             raise s.Err('回収確認済み元金が不足します。既存の充当・返金を先に確認してください',409)
     if total > cash:

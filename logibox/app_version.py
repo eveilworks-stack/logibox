@@ -3,9 +3,9 @@ import hashlib
 import os
 from pathlib import Path
 
-VERSION = '0.7.2'
-DISPLAY_VERSION = '0.72'
-SCHEMA_VERSION = 13
+VERSION = '0.7.3'
+DISPLAY_VERSION = '0.73'
+SCHEMA_VERSION = 14
 ROOT = Path(__file__).resolve().parent
 
 
